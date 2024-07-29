@@ -31,6 +31,24 @@ To prepare running it:
 
 You should also configure your IDE to use black so that code is automatically reformatted on save.
 
+## Install via makefile
+
+```commandline
+make setup
+```
+
+This will create a virtual environment called `venv`, build `requirements.txt` and
+`requirements-dev.txt` from `pyproject.toml` if they're out of date, install the Python
+and Node dependencies and install `pre-commit`.
+
+It's safe and fast to run `make setup` repeatedly as it will only update these things if
+they have changed.
+
+After `make setup` you can run `pre-commit` to run pre-commit checks on staged changes and
+`pre-commit run --all-files` to run them on all files. This replicates the linter checks that
+run from GitHub actions.
+
+
 ## Building and testing
 
 This component uses `pytest` tests and the `ruff` and `black` linters. `black` will reformat your code in an
