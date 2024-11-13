@@ -71,6 +71,15 @@ def parse_s3_url_components(parsed_url: ParseResult) -> tuple:
     return access_point, item_key, file_name
 
 
+def get_current_namespace():
+    try:
+        with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
+            return f.read().strip()
+    except IOError:
+        # Return default namespace
+        return "default"
+
+
 async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client) -> pystac.Catalog:
     """Stage in a STAC item from S3."""
     print(f"Stage in S3 URL {href}", file=sys.stderr)
@@ -145,14 +154,71 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
+def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = None) -> boto3.client:
+    # Configure AWS client
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            endpoint_url=endpoint_url,
+            region_name=region_name,
+        )
+    elif aws_creds_path:
+        sts_client = boto3.client("sts")
+
+        username = get_current_namespace()
+
+        role = sts_client.assume_role_with_web_identity(
+            RoleArn=role_arn,
+            RoleSessionName=f"{username}-session",
+            WebIdentityToken=token,
+        )
+        creds = role["Credentials"]
+
+        print("Creds are:")
+        print(creds)
+
+        # Save credentials to volume for further mounting
+        with open(aws_creds_path, "w") as f:
+            f.write("[default]\n")
+            f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
+            f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
+
+        s3_client = boto3.client(
+            "s3",
+            # aws_access_key_id=creds['AccessKeyId'],
+            # aws_secret_access_key=creds['SecretAccessKey'],
+            endpoint_url=endpoint_url,
+            region_name=region_name,
+        )
+
+    else:
+        try:
+            s3_client = boto3.client("s3")
+        except Exception as e:
+            print(f"Failed to configure AWS client: {e}", file=sys.stderr)
+            raise
+    return s3_client
+
+
 if __name__ == "__main__":
 
     config = stac_asset.Config(warn=True)
 
     location = sys.argv[1]
+    token = sys.argv[2]
+    calling_workspace = os.getenv("CALLING_WORKSPACE")
+    executing_workspace = os.getenv("EXECUTING_WORKSPACE")
+    role_arn = os.getenv("AWS_ROLE_ARN")
+    endpoint_url = os.getenv("AWS_S3_ENDPOINT")
+    region_name = os.getenv("AWS_REGION")
+    aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
+
+    print("Location is", location)
 
     if location.startswith("s3://"):
-        s3_client = boto3.client("s3")
+        s3_client = get_aws_client(endpoint_url, region_name, aws_creds_path)
         cat = asyncio.run(stage_s3(config, location, s3_client))
     elif is_valid_url(location):
         cat = asyncio.run(stage_url_or_path(config, location))
