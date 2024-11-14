@@ -64,9 +64,8 @@ def download_s3(bucket: str, key: str, file_name: str, s3_client: boto3.client) 
 
 def parse_s3_url_components(parsed_url: ParseResult) -> tuple:
     """Parse S3 URL components and return access point, item key and file name."""
-    parts = parsed_url.path.lstrip("/").split("/", 1)
-    access_point = f"{parsed_url.netloc}/{parts[0]}"
-    item_key = parts[1]
+    access_point = f"{parsed_url.netloc}"
+    item_key = parsed_url.path.lstrip("/")
     file_name = item_key.split("/")[-1]
     return access_point, item_key, file_name
 
@@ -161,7 +160,6 @@ def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = No
             "s3",
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            endpoint_url=endpoint_url,
             region_name=region_name,
         )
     elif aws_creds_path:
@@ -184,12 +182,10 @@ def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = No
             f.write("[default]\n")
             f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
             f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
+            f.write(f"aws_session_token = {creds['SessionToken']}\n")
 
         s3_client = boto3.client(
             "s3",
-            # aws_access_key_id=creds['AccessKeyId'],
-            # aws_secret_access_key=creds['SecretAccessKey'],
-            endpoint_url=endpoint_url,
             region_name=region_name,
         )
 
@@ -205,9 +201,10 @@ def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = No
 if __name__ == "__main__":
 
     config = stac_asset.Config(warn=True)
-
-    location = sys.argv[1]
-    token = sys.argv[2]
+    location = None
+    token = sys.argv[1]
+    if len(sys.argv) > 2:
+        location = sys.argv[2]
     calling_workspace = os.getenv("CALLING_WORKSPACE")
     executing_workspace = os.getenv("EXECUTING_WORKSPACE")
     role_arn = os.getenv("AWS_ROLE_ARN")
@@ -215,14 +212,16 @@ if __name__ == "__main__":
     region_name = os.getenv("AWS_REGION")
     aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
 
-    print("Location is", location)
-
-    if location.startswith("s3://"):
-        s3_client = get_aws_client(endpoint_url, region_name, aws_creds_path)
-        cat = asyncio.run(stage_s3(config, location, s3_client))
-    elif is_valid_url(location):
-        cat = asyncio.run(stage_url_or_path(config, location))
-    elif is_valid_file_path(location):
-        cat = asyncio.run(stage_url_or_path(config, location))
+    if location:
+        if location.startswith("s3://"):
+            s3_client = get_aws_client(endpoint_url, region_name, aws_creds_path)
+            cat = asyncio.run(stage_s3(config, location, s3_client))
+        elif is_valid_url(location):
+            cat = asyncio.run(stage_url_or_path(config, location))
+        elif is_valid_file_path(location):
+            cat = asyncio.run(stage_url_or_path(config, location))
+        else:
+            raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
     else:
-        raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
+        # Stagein only used for aws credentials retrieval
+        _ = get_aws_client(endpoint_url, region_name, aws_creds_path)
