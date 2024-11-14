@@ -174,9 +174,6 @@ def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = No
         )
         creds = role["Credentials"]
 
-        print("Creds are:")
-        print(creds)
-
         # Save credentials to volume for further mounting
         with open(aws_creds_path, "w") as f:
             f.write("[default]\n")
