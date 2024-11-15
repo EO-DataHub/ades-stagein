@@ -174,13 +174,14 @@ def generate_aws_credentials(role_arn: str, token: str, aws_creds_path: str):
         f.write(f"aws_session_token = {creds['SessionToken']}\n")
 
 
-def get_aws_client(region_name: str) -> boto3.client:
+def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
     # Configure AWS client
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         s3_client = boto3.client(
             "s3",
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            endpoint_url=endpoint_url,
             region_name=region_name,
         )
     else:
@@ -203,6 +204,7 @@ if __name__ == "__main__":
     role_arn = os.getenv("AWS_ROLE_ARN")
     region_name = os.getenv("AWS_REGION")
     aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
+    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
 
     # If credentials not found, retrieve them
     if not os.path.exists(aws_creds_path):
@@ -210,7 +212,7 @@ if __name__ == "__main__":
 
     if location:
         if location.startswith("s3://"):
-            s3_client = get_aws_client(region_name)
+            s3_client = get_aws_client(endpoint_url, region_name)
             cat = asyncio.run(stage_s3(config, location, s3_client))
         elif is_valid_url(location):
             cat = asyncio.run(stage_url_or_path(config, location))
