@@ -201,7 +201,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         location = sys.argv[2]
     role_arn = os.getenv("AWS_ROLE_ARN")
-    endpoint_url = os.getenv("AWS_S3_ENDPOINT")
     region_name = os.getenv("AWS_REGION")
     aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
 
