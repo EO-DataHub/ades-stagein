@@ -153,7 +153,28 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
-def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = None) -> boto3.client:
+def generate_aws_credentials(role_arn: str, token: str, aws_creds_path: str):
+    # Generate and save AWS credentials
+    sts_client = boto3.client("sts")
+
+    username = get_current_namespace()
+
+    role = sts_client.assume_role_with_web_identity(
+        RoleArn=role_arn,
+        RoleSessionName=f"{username}-session",
+        WebIdentityToken=token,
+    )
+    creds = role["Credentials"]
+
+    # Save credentials to volume for further mounting
+    with open(aws_creds_path, "w") as f:
+        f.write("[default]\n")
+        f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
+        f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
+        f.write(f"aws_session_token = {creds['SessionToken']}\n")
+
+
+def get_aws_client(region_name: str) -> boto3.client:
     # Configure AWS client
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         s3_client = boto3.client(
@@ -162,32 +183,9 @@ def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str = No
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
             region_name=region_name,
         )
-    elif aws_creds_path:
-        sts_client = boto3.client("sts")
-
-        username = get_current_namespace()
-
-        role = sts_client.assume_role_with_web_identity(
-            RoleArn=role_arn,
-            RoleSessionName=f"{username}-session",
-            WebIdentityToken=token,
-        )
-        creds = role["Credentials"]
-
-        # Save credentials to volume for further mounting
-        with open(aws_creds_path, "w") as f:
-            f.write("[default]\n")
-            f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
-            f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
-            f.write(f"aws_session_token = {creds['SessionToken']}\n")
-
-        s3_client = boto3.client(
-            "s3",
-            region_name=region_name,
-        )
-
     else:
         try:
+            # First uses credentials file, then service account
             s3_client = boto3.client("s3")
         except Exception as e:
             print(f"Failed to configure AWS client: {e}", file=sys.stderr)
@@ -202,16 +200,16 @@ if __name__ == "__main__":
     token = sys.argv[1]
     if len(sys.argv) > 2:
         location = sys.argv[2]
-    calling_workspace = os.getenv("CALLING_WORKSPACE")
-    executing_workspace = os.getenv("EXECUTING_WORKSPACE")
     role_arn = os.getenv("AWS_ROLE_ARN")
     endpoint_url = os.getenv("AWS_S3_ENDPOINT")
     region_name = os.getenv("AWS_REGION")
     aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
 
+    generate_aws_credentials(role_arn, token, aws_creds_path)
+
     if location:
         if location.startswith("s3://"):
-            s3_client = get_aws_client(endpoint_url, region_name, aws_creds_path)
+            s3_client = get_aws_client(region_name)
             cat = asyncio.run(stage_s3(config, location, s3_client))
         elif is_valid_url(location):
             cat = asyncio.run(stage_url_or_path(config, location))
@@ -219,6 +217,3 @@ if __name__ == "__main__":
             cat = asyncio.run(stage_url_or_path(config, location))
         else:
             raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
-    else:
-        # Stagein only used for aws credentials retrieval
-        _ = get_aws_client(endpoint_url, region_name, aws_creds_path)
