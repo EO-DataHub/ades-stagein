@@ -205,7 +205,9 @@ if __name__ == "__main__":
     region_name = os.getenv("AWS_REGION")
     aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
 
-    generate_aws_credentials(role_arn, token, aws_creds_path)
+    # If credentials not found, retrieve them
+    if not os.path.exists(aws_creds_path):
+        generate_aws_credentials(role_arn, token, aws_creds_path)
 
     if location:
         if location.startswith("s3://"):
