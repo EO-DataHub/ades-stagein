@@ -1,6 +1,7 @@
 from json.decoder import JSONDecodeError
 from unittest import mock
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 import pystac
 import pytest
@@ -175,15 +176,17 @@ def test_parse_s3_url_components():
 
     # Configure mock
     parsed_url = mock.Mock()
-    parsed_url.path = "/some/path/to/file.json"
-    parsed_url.netloc = "www.example.com"
+    url = "s3://bucket-name/key/to/file.ex"
+    parsed_url = urlparse(url)
+    # parsed_url.path = "/some/path/to/file.json"
+    # parsed_url.netloc = "www.example.com"
 
     result = parse_s3_url_components(parsed_url)
 
     # Assert result is as expected
-    assert result[0] == "www.example.com/some"
-    assert result[1] == "path/to/file.json"
-    assert result[2] == "file.json"
+    assert result[0] == "bucket-name"
+    assert result[1] == "key/to/file.ex"
+    assert result[2] == "file.ex"
 
 
 @patch("pystac.Catalog")
@@ -210,7 +213,7 @@ async def test_stage_s3_s3_assets(
 
     # Configure mocks
     mock_config = "test-config"
-    href = "s3://example.com/path/to/item.json"
+    href = "s3://bucket-name/path/to/item.json"
     mock_download_s3.return_value = "/absolute/path/to/item.json"
     mock_makedirs.return_value = None
     mock_getcwd.return_value = "/current/directory"
@@ -220,8 +223,8 @@ async def test_stage_s3_s3_assets(
     mock_item = mock.Mock()
     mock_asset_1 = mock.Mock()
     mock_asset_2 = mock.Mock()
-    mock_asset_1.href = "s3://example.com/path/to/asset_1.json"
-    mock_asset_2.href = "s3://example.com/path/to/asset_2.json"
+    mock_asset_1.href = "s3://bucket-name/path/to/asset_1.json"
+    mock_asset_2.href = "s3://bucket-name/path/to/asset_2.json"
     mock_item.assets.items.return_value = [("asset_1", mock_asset_1), ("asset_2", mock_asset_2)]
     mock_item.id = "item_12346"
     mock_pyastac_read_file.return_value = mock_item
@@ -252,20 +255,20 @@ async def test_stage_s3_s3_assets(
 
     calls = mock_download_s3.call_args_list
     assert calls[0][0] == (
-        "example.com/path",
-        "to/item.json",
+        "bucket-name",
+        "path/to/item.json",
         "item.json",
         mock_boto3_client_instance,
     )
     assert calls[1][0] == (
-        "example.com/path",
-        "to/asset_1.json",
+        "bucket-name",
+        "path/to/asset_1.json",
         "asset_1.json",
         mock_boto3_client_instance,
     )
     assert calls[2][0] == (
-        "example.com/path",
-        "to/asset_2.json",
+        "bucket-name",
+        "path/to/asset_2.json",
         "asset_2.json",
         mock_boto3_client_instance,
     )
@@ -297,7 +300,7 @@ async def test_stage_s3_url_assets(
 
     # Configure mocks
     mock_config = "test-config"
-    href = "s3://example.com/path/to/item.json"
+    href = "s3://bucket-name/path/to/item.json"
     mock_download_s3.return_value = "/absolute/path/to/item.json"
     mock_stac_asset_download_asset.return_value = None
     mock_makedirs.return_value = None
@@ -339,7 +342,7 @@ async def test_stage_s3_url_assets(
     assert calls[1][0][0] == "/current/directory/item.json"
 
     mock_download_s3.assert_called_once_with(
-        "example.com/path", "to/item.json", "item.json", mock_boto3_client_instance
+        "bucket-name", "path/to/item.json", "item.json", mock_boto3_client_instance
     )
 
     calls = mock_stac_asset_download_asset.call_args_list
@@ -375,7 +378,7 @@ async def test_stage_s3_relative_assets(
 
     # Configure mocks
     mock_config = "test-config"
-    href = "s3://example.com/path/to/item.json"
+    href = "s3://bucket-name/path/to/item.json"
     mock_download_s3.return_value = "/absolute/path/to/item.json"
     mock_stac_asset_download_asset.return_value = None
     mock_makedirs.return_value = None
@@ -418,20 +421,20 @@ async def test_stage_s3_relative_assets(
 
     calls = mock_download_s3.call_args_list
     assert calls[0][0] == (
-        "example.com/path",
-        "to/item.json",
+        "bucket-name",
+        "path/to/item.json",
         "item.json",
         mock_boto3_client_instance,
     )
     assert calls[1][0] == (
-        "example.com/path",
-        "to/asset_1.json",
+        "bucket-name",
+        "path/to/asset_1.json",
         "asset_1.json",
         mock_boto3_client_instance,
     )
     assert calls[2][0] == (
-        "example.com/path",
-        "to/asset_2.json",
+        "bucket-name",
+        "path/to/asset_2.json",
         "asset_2.json",
         mock_boto3_client_instance,
     )
