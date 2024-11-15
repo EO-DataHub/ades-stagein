@@ -1,6 +1,6 @@
 from json.decoder import JSONDecodeError
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 from urllib.parse import urlparse
 
 import pystac
@@ -8,6 +8,7 @@ import pytest
 
 from stage import (
     download_s3,
+    generate_aws_credentials,
     is_valid_file_path,
     is_valid_url,
     parse_s3_url_components,
@@ -482,3 +483,35 @@ def test_is_valid_file_path_invalid():
 
     # Assert result is as expected
     assert not result
+
+
+@patch("stage.get_current_namespace")
+@patch("boto3.client")
+def test_generate_aws_credentials(mock_boto3_client, mock_get_current_namespace):
+    # role_arn: str, token: str, aws_creds_path: str
+    # configure mocks
+    mock_sts_client = mock.Mock()
+    mock_sts_client.assume_role_with_web_identity.return_value = {
+        "Credentials": {
+            "AccessKeyId": "test-access-key",
+            "SecretAccessKey": "test-secret-key",
+            "SessionToken": "test-session-token",
+        }
+    }
+    mock_boto3_client.return_value = mock_sts_client
+    mock_get_current_namespace.return_value = "test-namespace"
+
+    role_arn = "arn::example-arn"
+    aws_creds_path = "/tmp/aws-credentials/credentials"
+    token = "valid_token"
+
+    # Mock the open function
+    m = mock_open()
+    with patch("builtins.open", m):
+        generate_aws_credentials(role_arn, token, aws_creds_path)
+
+    handle = m()
+    handle.write.assert_any_call("[default]\n")
+    handle.write.assert_any_call("aws_access_key_id = test-access-key\n")
+    handle.write.assert_any_call("aws_secret_access_key = test-secret-key\n")
+    handle.write.assert_any_call("aws_session_token = test-session-token\n")
