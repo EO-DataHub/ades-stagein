@@ -7,6 +7,7 @@ from json.decoder import JSONDecodeError
 from urllib.parse import ParseResult, urljoin, urlparse
 
 import boto3
+import botocore
 import pystac
 import stac_asset
 
@@ -53,7 +54,14 @@ def download_s3(bucket: str, key: str, file_name: str, s3_client: boto3.client) 
     """Download an item from S3."""
     print(f"Downloading item {file_name} in bucket {bucket}, key {key}", file=sys.stderr)
 
-    obj = s3_client.get_object(Bucket=bucket, Key=key)
+    try:
+        obj = s3_client.get_object(Bucket=bucket, Key=key)
+    except botocore.exceptions.ClientError as e:
+        print(
+            f"Failed to download item {file_name} in bucket {bucket}, key {key}: {e}",
+            file=sys.stderr,
+        )
+        raise
 
     # Create a temporary file and write the object content to it
     with open(file_name, "wb") as file:
@@ -64,10 +72,10 @@ def download_s3(bucket: str, key: str, file_name: str, s3_client: boto3.client) 
 
 def parse_s3_url_components(parsed_url: ParseResult) -> tuple:
     """Parse S3 URL components and return access point, item key and file name."""
-    access_point = f"{parsed_url.netloc}"
+    bucket_name = f"{parsed_url.netloc}"
     item_key = parsed_url.path.lstrip("/")
     file_name = item_key.split("/")[-1]
-    return access_point, item_key, file_name
+    return bucket_name, item_key, file_name
 
 
 def get_current_namespace():
@@ -84,8 +92,8 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
     print(f"Stage in S3 URL {href}", file=sys.stderr)
     # Parse S3 URL
     parsed_url = urlparse(href)
-    access_point, item_key, file_name = parse_s3_url_components(parsed_url)
-    file_path = download_s3(access_point, item_key, file_name, s3_client)
+    bucket_name, item_key, file_name = parse_s3_url_components(parsed_url)
+    file_path = download_s3(bucket_name, item_key, file_name, s3_client)
 
     item = pystac.read_file(file_path)
 
@@ -103,8 +111,8 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
         parsed_asset_url = urlparse(asset_href)
         if parsed_asset_url.scheme == "s3":
             print(f"Downloading asset {asset_href} via S3", file=sys.stderr)
-            asset_access_point, asset_key, asset_name = parse_s3_url_components(parsed_asset_url)
-            asset_path = download_s3(asset_access_point, asset_key, asset_name, s3_client)
+            asset_bucket_name, asset_key, asset_name = parse_s3_url_components(parsed_asset_url)
+            asset_path = download_s3(asset_bucket_name, asset_key, asset_name, s3_client)
             asset.href = asset_path
         elif parsed_asset_url.scheme in ["http", "https"]:
             print(f"Downloading asset {asset_href} via URL", file=sys.stderr)
@@ -114,7 +122,7 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
             print(f"Downloading asset {asset_href} via relative S3", file=sys.stderr)
             asset_key = urljoin(item_key, asset_href)
             asset_name = asset_key.split("/")[-1]
-            asset_path = download_s3(access_point, asset_key, asset_name, s3_client)
+            asset_path = download_s3(bucket_name, asset_key, asset_name, s3_client)
         else:
             print(f"Asset {asset_href} not supported", file=sys.stderr)
             continue
@@ -172,6 +180,8 @@ def generate_aws_credentials(role_arn: str, token: str, aws_creds_path: str):
         f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
         f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
         f.write(f"aws_session_token = {creds['SessionToken']}\n")
+
+    print(f"AWS credentials generated and saved to {aws_creds_path}", file=sys.stderr)
 
 
 def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
