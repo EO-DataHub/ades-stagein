@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from json.decoder import JSONDecodeError
 from urllib.parse import ParseResult, urljoin, urlparse
 
@@ -222,6 +223,7 @@ if __name__ == "__main__":
 
     if location:
         if location.startswith("s3://"):
+            time.sleep(10)
             s3_client = get_aws_client(endpoint_url, region_name)
             cat = asyncio.run(stage_s3(config, location, s3_client))
         elif is_valid_url(location):
