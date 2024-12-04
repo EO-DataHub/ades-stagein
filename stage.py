@@ -223,7 +223,7 @@ if __name__ == "__main__":
 
     if location:
         if location.startswith("s3://"):
-            time.sleep(10)
+            time.sleep(10)  # ensures the aws credentials file is saved and available
             s3_client = get_aws_client(endpoint_url, region_name)
             cat = asyncio.run(stage_s3(config, location, s3_client))
         elif is_valid_url(location):
