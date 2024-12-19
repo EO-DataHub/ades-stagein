@@ -190,6 +190,23 @@ def test_parse_s3_url_components():
     assert result[2] == "file.ex"
 
 
+def test_parse_s3_url_components_access_point():
+
+    # Configure mock
+    parsed_url = mock.Mock()
+    url = "s3://arn-details:accesspoint/cluster-name-workspace-s3/key/to/file.ex"
+    parsed_url = urlparse(url)
+    # parsed_url.path = "/some/path/to/file.json"
+    # parsed_url.netloc = "www.example.com"
+
+    result = parse_s3_url_components(parsed_url)
+
+    # Assert result is as expected
+    assert result[0] == "arn-details:accesspoint/cluster-name-workspace-s3"
+    assert result[1] == "key/to/file.ex"
+    assert result[2] == "file.ex"
+
+
 @patch("pystac.Catalog")
 @patch("os.listdir")
 @patch("shutil.move")
@@ -485,9 +502,21 @@ def test_is_valid_file_path_invalid():
     assert not result
 
 
+@patch.dict(
+    "os.environ",
+    {
+        "KEYCLOAK_BASE_URL": "keycloak-base-url",
+        "KEYCLOAK_REALM": "test-realm",
+        "CLIENT_ID": "client-id",
+        "CLIENT_SECRET": "client-secret",
+    },
+)
+@patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
-def test_generate_aws_credentials(mock_boto3_client, mock_get_current_namespace):
+def test_generate_aws_credentials_calling_workspace(
+    mock_boto3_client, mock_get_current_namespace, mock_post
+):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
     mock_sts_client = mock.Mock()
@@ -500,18 +529,98 @@ def test_generate_aws_credentials(mock_boto3_client, mock_get_current_namespace)
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
+    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
     token = "valid_token"
+    workspace = "test-workspace"
 
     # Mock the open function
     m = mock_open()
     with patch("builtins.open", m):
-        generate_aws_credentials(role_arn, token, aws_creds_path)
+        generate_aws_credentials(
+            role_arn, aws_creds_path, token, calling_workspace=workspace, save=True
+        )
 
     handle = m()
     handle.write.assert_any_call("[default]\n")
     handle.write.assert_any_call("aws_access_key_id = test-access-key\n")
     handle.write.assert_any_call("aws_secret_access_key = test-secret-key\n")
     handle.write.assert_any_call("aws_session_token = test-session-token\n")
+
+    payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": "valid_token",
+        "scope": f"workspace:{workspace}",
+    }
+
+    mock_post.assert_called_once_with(
+        "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token",
+        data=payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "KEYCLOAK_BASE_URL": "keycloak-base-url",
+        "KEYCLOAK_REALM": "test-realm",
+        "CLIENT_ID": "client-id",
+        "CLIENT_SECRET": "client-secret",
+    },
+)
+@patch("requests.post")
+@patch("stage.get_current_namespace")
+@patch("boto3.client")
+def test_generate_aws_credentials_user_service(
+    mock_boto3_client, mock_get_current_namespace, mock_post
+):
+    # role_arn: str, token: str, aws_creds_path: str
+    # configure mocks
+    mock_sts_client = mock.Mock()
+    mock_sts_client.assume_role_with_web_identity.return_value = {
+        "Credentials": {
+            "AccessKeyId": "test-access-key",
+            "SecretAccessKey": "test-secret-key",
+            "SessionToken": "test-session-token",
+        }
+    }
+    mock_boto3_client.return_value = mock_sts_client
+    mock_get_current_namespace.return_value = "test-namespace"
+    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+
+    role_arn = "arn::example-arn"
+    aws_creds_path = "/tmp/aws-credentials/credentials"
+    token = "valid_token"
+    user_service = True
+
+    # Mock the open function
+    m = mock_open()
+    with patch("builtins.open", m):
+        generate_aws_credentials(
+            role_arn, aws_creds_path, token, executing_workspace=user_service, save=True
+        )
+
+    handle = m()
+    handle.write.assert_any_call("[default]\n")
+    handle.write.assert_any_call("aws_access_key_id = test-access-key\n")
+    handle.write.assert_any_call("aws_secret_access_key = test-secret-key\n")
+    handle.write.assert_any_call("aws_session_token = test-session-token\n")
+
+    payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": "valid_token",
+        "scope": f"user_services:{user_service}",
+    }
+
+    mock_post.assert_called_once_with(
+        "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token",
+        data=payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
