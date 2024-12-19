@@ -321,7 +321,7 @@ if __name__ == "__main__":
         token,
         calling_workspace=calling_workspace,
         save=True,
-        additional_path=f"{aws_creds_directory}/service" if not user_service else None,
+        additional_path=f"{aws_creds_directory}/service/credentials" if not user_service else None,
     )
 
     if user_service:
