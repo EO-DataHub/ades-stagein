@@ -239,12 +239,14 @@ def generate_aws_credentials(
 
     if calling_workspace:
         workspace_token = generate_calling_workspace_token(token, calling_workspace)
+        session_name = f"calling_{calling_workspace}_session"
     elif executing_workspace:
         workspace_token = generate_executing_workspace_token(token, executing_workspace)
+        session_name = f"executing_{executing_workspace}_session"
 
     role = sts_client.assume_role_with_web_identity(
         RoleArn=role_arn,
-        RoleSessionName=f"{calling_workspace}-{executing_workspace}-session",
+        RoleSessionName=session_name,
         WebIdentityToken=workspace_token,
     )
     creds = role["Credentials"]
