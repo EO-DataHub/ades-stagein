@@ -214,8 +214,6 @@ def generate_workspace_token(
     else:
         scope = f"user_services:{executing_workspace}"
 
-    print("Scope is ", scope, file=sys.stderr)
-
     payload = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
@@ -278,15 +276,12 @@ def generate_aws_credentials(
 def get_aws_client(creds: dict) -> boto3.client:
     # Configure AWS client
     try:
-        if creds:
-            s3_client = boto3.client(
-                "s3",
-                aws_access_key_id=creds["AccessKeyId"],
-                aws_secret_access_key=creds["SecretAccessKey"],
-                aws_session_token=creds["SessionToken"],
-            )
-        else:
-            s3_client = boto3.client("s3")
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=creds["AccessKeyId"],
+            aws_secret_access_key=creds["SecretAccessKey"],
+            aws_session_token=creds["SessionToken"],
+        )
     except Exception as e:
         print(f"Failed to configure AWS client: {e}", file=sys.stderr)
         raise
