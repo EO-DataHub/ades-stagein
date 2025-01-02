@@ -624,3 +624,43 @@ def test_generate_aws_credentials_user_service(
         data=payload,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "KEYCLOAK_BASE_URL": "keycloak-base-url",
+        "KEYCLOAK_REALM": "test-realm",
+        "CLIENT_ID": "client-id",
+        "CLIENT_SECRET": "client-secret",
+    },
+)
+@patch("requests.post")
+@patch("stage.get_current_namespace")
+@patch("boto3.client")
+def test_generate_aws_credentials_value_error(
+    mock_boto3_client, mock_get_current_namespace, mock_post
+):
+    # role_arn: str, token: str, aws_creds_path: str
+    # configure mocks
+    mock_sts_client = mock.Mock()
+    mock_sts_client.assume_role_with_web_identity.return_value = {
+        "Credentials": {
+            "AccessKeyId": "test-access-key",
+            "SecretAccessKey": "test-secret-key",
+            "SessionToken": "test-session-token",
+        }
+    }
+    mock_boto3_client.return_value = mock_sts_client
+    mock_get_current_namespace.return_value = "test-namespace"
+    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+
+    role_arn = "arn::example-arn"
+    aws_creds_path = "/tmp/aws-credentials/credentials"
+    token = "valid_token"
+
+    # Mock the open function
+    m = mock_open()
+    with patch("builtins.open", m):
+        with pytest.raises(ValueError):
+            generate_aws_credentials(role_arn, aws_creds_path, token, save=True)
