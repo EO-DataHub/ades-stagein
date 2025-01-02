@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import re
 import shutil
@@ -10,7 +9,6 @@ from urllib.parse import ParseResult, urljoin, urlparse
 
 import boto3
 import botocore
-import jwt
 import pystac
 import requests
 import stac_asset
@@ -171,20 +169,20 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
-def generate_user_service_token(workspace: str):
+def generate_calling_workspace_token(token: str, calling_workspace: Optional[str]):
     KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
     REALM = os.environ.get("KEYCLOAK_REALM")
     CLIENT_ID = os.environ.get("CLIENT_ID")
     CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 
     KEYCLOAK_URL = f"https://{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
-
-    scope = f"user_services:{workspace}"
+    scope = f"workspace:{calling_workspace}"
 
     payload = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
         "scope": scope,
     }
 
@@ -194,25 +192,17 @@ def generate_user_service_token(workspace: str):
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    claims = jwt.decode(response.json().get("access_token"), options={"verify_signature": False})
-    print(f"Claims: {json.dumps(claims, indent=2)}", file=sys.stderr)
-
     return response.json().get("access_token")
 
 
-def generate_workspace_token(
-    token: str, calling_workspace: Optional[str], executing_workspace: Optional[str]
-):
+def generate_executing_workspace_token(token: str, executing_workspace: Optional[str]):
     KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
     REALM = os.environ.get("KEYCLOAK_REALM")
     CLIENT_ID = os.environ.get("CLIENT_ID")
     CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 
     KEYCLOAK_URL = f"https://{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
-    if calling_workspace:
-        scope = f"workspace:{calling_workspace}"
-    else:
-        scope = f"user_services:{executing_workspace}"
+    scope = f"user_services:{executing_workspace}"
 
     payload = {
         "client_id": CLIENT_ID,
@@ -241,10 +231,16 @@ def generate_aws_credentials(
     additional_path: Optional[str] = None,
 ) -> dict:
 
+    if not calling_workspace and not executing_workspace:
+        raise ValueError("Either calling_workspace or executing_workspace must be provided")
+
     # Generate and save AWS credentials
     sts_client = boto3.client("sts")
 
-    workspace_token = generate_workspace_token(token, calling_workspace, executing_workspace)
+    if calling_workspace:
+        workspace_token = generate_calling_workspace_token(token, calling_workspace)
+    elif executing_workspace:
+        workspace_token = generate_executing_workspace_token(token, executing_workspace)
 
     role = sts_client.assume_role_with_web_identity(
         RoleArn=role_arn,
