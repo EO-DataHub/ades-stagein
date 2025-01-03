@@ -79,7 +79,7 @@ pystac[validation]==1.10.1
     #   eodhp-ades-stagein (pyproject.toml)
     #   pystac-client
     #   stac-asset
-pystac-client==0.8.5
+pystac-client==0.8.3
     # via eodhp-ades-stagein (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via
