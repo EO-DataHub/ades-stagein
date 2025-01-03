@@ -71,6 +71,64 @@ async def test_stage_url_or_path(
     assert result == mock_catalog
 
 
+@patch.dict({"RESOURCE_CATALOG_PREFIX": "https://internal.example.com/"})
+@patch("pystac.Catalog")
+@patch("os.listdir")
+@patch("stac_asset.download_item")
+@patch("os.chdir")
+@patch("os.makedirs")
+@patch("pystac_client.Client.open")
+@pytest.mark.asyncio
+async def test_stage_url_or_path_auth(
+    mock_open,
+    mock_makedirs,
+    mock_chdir,
+    mock_stac_asset_download_item,
+    mock_listdir,
+    mock_pystac_catalog,
+):
+
+    # Configure mocks
+    mock_item = mock.Mock()
+    mock_item.id = "item_12346"
+    mock_open.return_value = mock_item
+    mock_makedirs.return_value = None
+    mock_chdir.return_value = None
+    mock_stac_asset_download_item.return_value = mock_item
+    mock_listdir.return_value = ["item_12346"]
+    mock_catalog = mock.Mock()
+    mock_catalog.add_item.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.safe.return_value = None
+    mock_pystac_catalog.return_value = mock_catalog
+    mock_config = "test-config"
+
+    # Configure test variables
+    location = "https://internal.example.com/item.json"
+    token = "valid-token"
+
+    result = await stage_url_or_path(
+        mock_config, location, token, resource_catalogue_prefix="https://internal.example.com/"
+    )
+
+    # Confirm calls were as expected
+    mock_open.assert_called_once_with(location, headers={"Authorization": "Bearer valid-token"})
+    mock_stac_asset_download_item.assert_called_once_with(
+        item=mock_item, directory=".", config=mock_config
+    )
+    mock_pystac_catalog.assert_called_once_with(
+        id="catalog",
+        description="catalog with staged item_12346",
+        title="catalog with staged item_12346",
+    )
+    mock_catalog.add_item.assert_called_once_with(mock_item)
+    mock_catalog.normalize_hrefs.assert_called_once_with("./")
+    mock_catalog.save.assert_called_once_with(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+    # Assert result is as expected
+    assert result == mock_catalog
+
+
 @patch("pystac.read_file")
 @pytest.mark.asyncio
 async def test_stage_url_or_path_not_found(mock_read_file, capsys):
