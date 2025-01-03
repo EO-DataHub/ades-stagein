@@ -67,7 +67,9 @@ dependencies = [
     "pystac",
     "boto3",
     "stac-asset",
-    "urllib3<1.27"
+    "urllib3",
+    "pyjwt",
+    "requests"
 ]
 
 # List additional groups of dependencies here (e.g. development
