@@ -10,17 +10,33 @@ from urllib.parse import ParseResult, urljoin, urlparse
 import boto3
 import botocore
 import pystac
+import pystac_client
 import requests
 import stac_asset
 
+RESOURCE_CATALOGUE_PREFIX = os.getenv(
+    "RESOURCE_CATALOGUE_PREFIX", "https://test.eodatahub.org.uk/api/catalogue/stac/"
+)
 
-async def stage_url_or_path(config: stac_asset.Config, location: str) -> pystac.Catalog:
+
+async def stage_url_or_path(
+    config: stac_asset.Config,
+    location: str,
+    token: Optional[str] = None,
+    resource_catalogue_prefix: Optional[str] = None,
+) -> pystac.Catalog:
     """Stage in a STAC item from a URL or file path."""
 
     print(f"Stage in STAC data at {location}", file=sys.stderr)
 
     try:
-        item = pystac.read_file(location)
+        # Check if location is within the EODataHub Resource Catalogue
+        # If token is provided, pass it to the API
+        if resource_catalogue_prefix and token and location.startswith(resource_catalogue_prefix):
+            item = pystac_client.Client.open(location, headers={"Authorization": f"Bearer {token}"})
+        else:
+            # Otherwise attempt to access public data
+            item = pystac.read_file(location)
     except FileNotFoundError:
         print(f"The file at {location} was not found.", file=sys.stderr)
         raise
@@ -332,7 +348,14 @@ if __name__ == "__main__":
             s3_client = get_aws_client(creds)
             cat = asyncio.run(stage_s3(config, location, s3_client))
         elif is_valid_url(location):
-            cat = asyncio.run(stage_url_or_path(config, location))
+            cat = asyncio.run(
+                stage_url_or_path(
+                    config,
+                    location,
+                    token=token,
+                    resource_catalogue_prefix=RESOURCE_CATALOGUE_PREFIX,
+                )
+            )
         elif is_valid_file_path(location):
             cat = asyncio.run(stage_url_or_path(config, location))
         else:
