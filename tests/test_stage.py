@@ -529,7 +529,9 @@ def test_generate_aws_credentials_calling_workspace(
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {"access_token": "valid-token"}
+    )
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
@@ -591,7 +593,9 @@ def test_generate_aws_credentials_user_service(
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {"access_token": "valid-token"}
+    )
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
@@ -653,7 +657,7 @@ def test_generate_aws_credentials_value_error(
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+    mock_post.return_value = mock.MagicMock(json=lambda: {"access_token": "valid-token"})
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
