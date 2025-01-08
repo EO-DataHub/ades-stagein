@@ -235,8 +235,6 @@ def generate_executing_workspace_token(token: str, executing_workspace: Optional
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    print(response.json())
-
     if response.status_code != 200:
         print(f"Failed to generate executing workspace token: {response.text}", file=sys.stderr)
         raise ValueError(f"Failed to generate executing workspace token: {response.text}")
@@ -246,8 +244,6 @@ def generate_executing_workspace_token(token: str, executing_workspace: Optional
     except Exception as e:
         print(f"Failed to generate executing workspace token: {e}", file=sys.stderr)
         raise
-
-    print(access_token)
 
     if not access_token:
         print(
