@@ -192,7 +192,24 @@ def generate_calling_workspace_token(token: str, calling_workspace: Optional[str
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    return response.json().get("access_token")
+    if response.status_code != 200:
+        print(f"Failed to generate calling workspace token: {response.text}", file=sys.stderr)
+        raise ValueError(f"Failed to generate calling workspace token: {response.text}")
+
+    try:
+        access_token = response.json().get("access_token")
+    except Exception as e:
+        print(f"Failed to generate calling workspace token: {e}", file=sys.stderr)
+        raise
+
+    if not access_token:
+        print(
+            f"Failed to generate calling workspace token, token is None: {response.text}",
+            file=sys.stderr,
+        )
+        raise ValueError(f"Failed to generate calling workspace token: {response.text}")
+
+    return access_token
 
 
 def generate_executing_workspace_token(token: str, executing_workspace: Optional[str]):
@@ -218,7 +235,28 @@ def generate_executing_workspace_token(token: str, executing_workspace: Optional
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    return response.json().get("access_token")
+    print(response.json())
+
+    if response.status_code != 200:
+        print(f"Failed to generate executing workspace token: {response.text}", file=sys.stderr)
+        raise ValueError(f"Failed to generate executing workspace token: {response.text}")
+
+    try:
+        access_token = response.json().get("access_token")
+    except Exception as e:
+        print(f"Failed to generate executing workspace token: {e}", file=sys.stderr)
+        raise
+
+    print(access_token)
+
+    if not access_token:
+        print(
+            f"Failed to generate executing workspace token, token is None: {response.text}",
+            file=sys.stderr,
+        )
+        raise ValueError(f"Failed to generate executing workspace token: {response.text}")
+
+    return access_token
 
 
 def generate_aws_credentials(
