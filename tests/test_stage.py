@@ -1,3 +1,4 @@
+import os
 from json.decoder import JSONDecodeError
 from unittest import mock
 from unittest.mock import mock_open, patch
@@ -17,6 +18,20 @@ from stage import (
     stage_s3,
     stage_url_or_path,
 )
+
+
+@pytest.fixture()
+def setenvvar(monkeypatch):
+    with mock.patch.dict(os.environ, clear=True):
+        envvars = {
+            "KEYCLOAK_BASE_URL": "keycloak-base-url",
+            "KEYCLOAK_REALM": "test-realm",
+            "CLIENT_ID": "client-id",
+            "CLIENT_SECRET": "client-secret",
+        }
+        for k, v in envvars.items():
+            monkeypatch.setenv(k, v)
+        yield
 
 
 @patch("pystac.Catalog")
@@ -504,20 +519,11 @@ def test_is_valid_file_path_invalid():
     assert not result
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
 def test_generate_aws_credentials_calling_workspace(
-    mock_boto3_client, mock_get_current_namespace, mock_post
+    mock_boto3_client, mock_get_current_namespace, mock_post, setenvvar
 ):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
@@ -568,20 +574,11 @@ def test_generate_aws_credentials_calling_workspace(
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
 def test_generate_aws_credentials_user_service(
-    mock_boto3_client, mock_get_current_namespace, mock_post
+    mock_boto3_client, mock_get_current_namespace, mock_post, setenvvar
 ):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
@@ -632,20 +629,11 @@ def test_generate_aws_credentials_user_service(
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
 def test_generate_aws_credentials_value_error(
-    mock_boto3_client, mock_get_current_namespace, mock_post
+    mock_boto3_client, mock_get_current_namespace, mock_post, setenvvar
 ):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
@@ -672,17 +660,8 @@ def test_generate_aws_credentials_value_error(
             generate_aws_credentials(role_arn, aws_creds_path, token, save=True)
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_calling_workspace_token(mock_post):
+def test_generate_calling_workspace_token(mock_post, setenvvar):
     # configure mocks
     mock_post.return_value = mock.MagicMock(
         status_code=200, json=lambda: {"access_token": "valid-access-token"}
@@ -711,17 +690,8 @@ def test_generate_calling_workspace_token(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_calling_workspace_token_keycloak_error(mock_post):
+def test_generate_calling_workspace_token_keycloak_error(mock_post, setenvvar):
     # configure mocks
     mock_post.return_value = mock.MagicMock(
         status_code=500, text="Keycloak failed to generate token"
@@ -749,17 +719,8 @@ def test_generate_calling_workspace_token_keycloak_error(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_calling_workspace_token_access_token_error(mock_post):
+def test_generate_calling_workspace_token_access_token_error(mock_post, setenvvar):
     # configure mocks
     mock_response = mock.MagicMock()
     mock_response.status_code = 200
@@ -788,17 +749,8 @@ def test_generate_calling_workspace_token_access_token_error(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_calling_workspace_token_blank_access_token(mock_post):
+def test_generate_calling_workspace_token_blank_access_token(mock_post, setenvvar):
     # configure mocks
     mock_post.return_value = mock.MagicMock(
         status_code=200, json=lambda: {}, text="Some response test"
@@ -828,17 +780,8 @@ def test_generate_calling_workspace_token_blank_access_token(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_executing_workspace_token(mock_post):
+def test_generate_executing_workspace_token(mock_post, setenvvar):
     # configure mocks
     mock_post.return_value = mock.MagicMock(
         status_code=200, json=lambda: {"access_token": "valid-access-token"}
@@ -867,17 +810,8 @@ def test_generate_executing_workspace_token(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_executing_workspace_token_keycloak_error(mock_post):
+def test_generate_executing_workspace_token_keycloak_error(mock_post, setenvvar):
     # configure mocks
     mock_post.return_value = mock.MagicMock(
         status_code=500, text="Keycloak failed to generate token"
@@ -905,17 +839,8 @@ def test_generate_executing_workspace_token_keycloak_error(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_executing_workspace_token_access_token_error(mock_post):
+def test_generate_executing_workspace_token_access_token_error(mock_post, setenvvar):
     # configure mocks
     mock_response = mock.MagicMock()
     mock_response.status_code = 200
@@ -944,17 +869,8 @@ def test_generate_executing_workspace_token_access_token_error(mock_post):
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
-def test_generate_executing_workspace_token_blank_access_token(mock_post):
+def test_generate_executing_workspace_token_blank_access_token(mock_post, setenvvar):
     # configure mocks
     mock_post.return_value = mock.MagicMock(
         status_code=200, json=lambda: {}, text="Some response test"
