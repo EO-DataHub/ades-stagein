@@ -1,3 +1,4 @@
+import os
 from json.decoder import JSONDecodeError
 from unittest import mock
 from unittest.mock import mock_open, patch
@@ -9,12 +10,28 @@ import pytest
 from stage import (
     download_s3,
     generate_aws_credentials,
+    generate_calling_workspace_token,
+    generate_executing_workspace_token,
     is_valid_file_path,
     is_valid_url,
     parse_s3_url_components,
     stage_s3,
     stage_url_or_path,
 )
+
+
+@pytest.fixture()
+def setenvvar(monkeypatch):
+    with mock.patch.dict(os.environ, clear=True):
+        envvars = {
+            "KEYCLOAK_BASE_URL": "keycloak-base-url",
+            "KEYCLOAK_REALM": "test-realm",
+            "CLIENT_ID": "client-id",
+            "CLIENT_SECRET": "client-secret",
+        }
+        for k, v in envvars.items():
+            monkeypatch.setenv(k, v)
+        yield
 
 
 @patch("pystac.Catalog")
@@ -502,20 +519,11 @@ def test_is_valid_file_path_invalid():
     assert not result
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
 def test_generate_aws_credentials_calling_workspace(
-    mock_boto3_client, mock_get_current_namespace, mock_post
+    mock_boto3_client, mock_get_current_namespace, mock_post, setenvvar
 ):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
@@ -529,7 +537,9 @@ def test_generate_aws_credentials_calling_workspace(
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {"access_token": "valid-token"}
+    )
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
@@ -564,20 +574,11 @@ def test_generate_aws_credentials_calling_workspace(
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
 def test_generate_aws_credentials_user_service(
-    mock_boto3_client, mock_get_current_namespace, mock_post
+    mock_boto3_client, mock_get_current_namespace, mock_post, setenvvar
 ):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
@@ -591,7 +592,9 @@ def test_generate_aws_credentials_user_service(
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {"access_token": "valid-token"}
+    )
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
@@ -626,20 +629,11 @@ def test_generate_aws_credentials_user_service(
     )
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
 @patch("requests.post")
 @patch("stage.get_current_namespace")
 @patch("boto3.client")
 def test_generate_aws_credentials_value_error(
-    mock_boto3_client, mock_get_current_namespace, mock_post
+    mock_boto3_client, mock_get_current_namespace, mock_post, setenvvar
 ):
     # role_arn: str, token: str, aws_creds_path: str
     # configure mocks
@@ -653,7 +647,7 @@ def test_generate_aws_credentials_value_error(
     }
     mock_boto3_client.return_value = mock_sts_client
     mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+    mock_post.return_value = mock.MagicMock(json=lambda: {"access_token": "valid-token"})
 
     role_arn = "arn::example-arn"
     aws_creds_path = "/tmp/aws-credentials/credentials"
@@ -664,3 +658,243 @@ def test_generate_aws_credentials_value_error(
     with patch("builtins.open", m):
         with pytest.raises(ValueError):
             generate_aws_credentials(role_arn, aws_creds_path, token, save=True)
+
+
+@patch("requests.post")
+def test_generate_calling_workspace_token(mock_post, setenvvar):
+    # configure mocks
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {"access_token": "valid-access-token"}
+    )
+    token = "valid-token"
+    calling_workspace = "test-workspace"
+    scope = f"workspace:{calling_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    result = generate_calling_workspace_token(token, calling_workspace)
+
+    assert result == "valid-access-token"
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_calling_workspace_token_keycloak_error(mock_post, setenvvar):
+    # configure mocks
+    mock_post.return_value = mock.MagicMock(
+        status_code=500, text="Keycloak failed to generate token"
+    )
+    token = "valid-token"
+    calling_workspace = "test-workspace"
+    scope = f"workspace:{calling_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    with pytest.raises(ValueError, match="Keycloak failed to generate token"):
+        generate_calling_workspace_token(token, calling_workspace)
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_calling_workspace_token_access_token_error(mock_post, setenvvar):
+    # configure mocks
+    mock_response = mock.MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.side_effect = JSONDecodeError("JSON decode error", "", 0)
+    mock_post.return_value = mock_response
+    token = "valid-token"
+    calling_workspace = "test-workspace"
+    scope = f"workspace:{calling_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    with pytest.raises(JSONDecodeError, match="JSON decode error"):
+        generate_calling_workspace_token(token, calling_workspace)
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_calling_workspace_token_blank_access_token(mock_post, setenvvar):
+    # configure mocks
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {}, text="Some response test"
+    )
+    token = "valid-token"
+    calling_workspace = "test-workspace"
+    scope = f"workspace:{calling_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    with pytest.raises(
+        ValueError, match="Failed to generate calling workspace token: Some response test"
+    ):
+        generate_calling_workspace_token(token, calling_workspace)
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_executing_workspace_token(mock_post, setenvvar):
+    # configure mocks
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {"access_token": "valid-access-token"}
+    )
+    token = "valid-token"
+    executing_workspace = "test-workspace"
+    scope = f"user_services:{executing_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    result = generate_executing_workspace_token(token, executing_workspace)
+
+    assert result == "valid-access-token"
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_executing_workspace_token_keycloak_error(mock_post, setenvvar):
+    # configure mocks
+    mock_post.return_value = mock.MagicMock(
+        status_code=500, text="Keycloak failed to generate token"
+    )
+    token = "valid-token"
+    executing_workspace = "test-workspace"
+    scope = f"user_services:{executing_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    with pytest.raises(ValueError, match="Keycloak failed to generate token"):
+        generate_executing_workspace_token(token, executing_workspace)
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_executing_workspace_token_access_token_error(mock_post, setenvvar):
+    # configure mocks
+    mock_response = mock.MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.side_effect = JSONDecodeError("JSON decode error", "", 0)
+    mock_post.return_value = mock_response
+    token = "valid-token"
+    executing_workspace = "test-workspace"
+    scope = f"user_services:{executing_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    with pytest.raises(JSONDecodeError, match="JSON decode error"):
+        generate_executing_workspace_token(token, executing_workspace)
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+
+@patch("requests.post")
+def test_generate_executing_workspace_token_blank_access_token(mock_post, setenvvar):
+    # configure mocks
+    mock_post.return_value = mock.MagicMock(
+        status_code=200, json=lambda: {}, text="Some response test"
+    )
+    token = "valid-token"
+    executing_workspace = "test-workspace"
+    scope = f"user_services:{executing_workspace}"
+    keycloak_url = "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token"
+    with pytest.raises(
+        ValueError, match="Failed to generate executing workspace token: Some response test"
+    ):
+        generate_executing_workspace_token(token, executing_workspace)
+
+    assert mock_post.call_count == 1
+
+    expected_payload = {
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": token,
+        "scope": scope,
+    }
+    mock_post.assert_called_once_with(
+        keycloak_url,
+        data=expected_payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )

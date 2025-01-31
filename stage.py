@@ -151,7 +151,7 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
     return cat
 
 
-def is_valid_url(url: str):
+def is_valid_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
         return bool(parsed.scheme) and bool(parsed.netloc)
@@ -169,7 +169,7 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
-def generate_calling_workspace_token(token: str, calling_workspace: Optional[str]):
+def generate_calling_workspace_token(token: str, calling_workspace: Optional[str]) -> str:
     KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
     REALM = os.environ.get("KEYCLOAK_REALM")
     CLIENT_ID = os.environ.get("CLIENT_ID")
@@ -192,10 +192,28 @@ def generate_calling_workspace_token(token: str, calling_workspace: Optional[str
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    return response.json().get("access_token")
+    if response.status_code != 200:
+        print(f"Failed to generate calling workspace token: {response.text}", file=sys.stderr)
+        raise ValueError(f"Failed to generate calling workspace token: {response.text}")
+
+    try:
+        access_token = response.json().get("access_token")
+    except Exception as e:
+        print(f"Failed to generate calling workspace token: {e}", file=sys.stderr)
+        print(f"Response was {response.text} with status code: {response.status_code}")
+        raise
+
+    if not access_token:
+        print(
+            f"Failed to generate calling workspace token, token is None: {response.text}",
+            file=sys.stderr,
+        )
+        raise ValueError(f"Failed to generate calling workspace token: {response.text}")
+
+    return access_token
 
 
-def generate_executing_workspace_token(token: str, executing_workspace: Optional[str]):
+def generate_executing_workspace_token(token: str, executing_workspace: Optional[str]) -> str:
     KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
     REALM = os.environ.get("KEYCLOAK_REALM")
     CLIENT_ID = os.environ.get("CLIENT_ID")
@@ -218,7 +236,24 @@ def generate_executing_workspace_token(token: str, executing_workspace: Optional
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    return response.json().get("access_token")
+    if response.status_code != 200:
+        print(f"Failed to generate executing workspace token: {response.text}", file=sys.stderr)
+        raise ValueError(f"Failed to generate executing workspace token: {response.text}")
+
+    try:
+        access_token = response.json().get("access_token")
+    except Exception as e:
+        print(f"Failed to generate executing workspace token: {e}", file=sys.stderr)
+        raise
+
+    if not access_token:
+        print(
+            f"Failed to generate executing workspace token, token is None: {response.text}",
+            file=sys.stderr,
+        )
+        raise ValueError(f"Failed to generate executing workspace token: {response.text}")
+
+    return access_token
 
 
 def generate_aws_credentials(
