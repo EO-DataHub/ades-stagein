@@ -4,13 +4,11 @@ import re
 import shutil
 import sys
 from json.decoder import JSONDecodeError
-from typing import Optional
 from urllib.parse import ParseResult, urljoin, urlparse
 
 import boto3
 import botocore
 import pystac
-import requests
 import stac_asset
 
 
@@ -169,202 +167,37 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
-def generate_calling_workspace_token(token: str, calling_workspace: Optional[str]) -> str:
-    KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
-    REALM = os.environ.get("KEYCLOAK_REALM")
-    CLIENT_ID = os.environ.get("CLIENT_ID")
-    CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
-
-    KEYCLOAK_URL = f"https://{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
-    scope = f"workspace:{calling_workspace}"
-
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": token,
-        "scope": scope,
-    }
-
-    response = requests.post(
-        KEYCLOAK_URL,
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-
-    if response.status_code != 200:
-        print(f"Failed to generate calling workspace token: {response.text}", file=sys.stderr)
-        raise ValueError(f"Failed to generate calling workspace token: {response.text}")
-
-    try:
-        access_token = response.json().get("access_token")
-    except Exception as e:
-        print(f"Failed to generate calling workspace token: {e}", file=sys.stderr)
-        print(f"Response was {response.text} with status code: {response.status_code}")
-        raise
-
-    if not access_token:
-        print(
-            f"Failed to generate calling workspace token, token is None: {response.text}",
-            file=sys.stderr,
-        )
-        raise ValueError(f"Failed to generate calling workspace token: {response.text}")
-
-    return access_token
-
-
-def generate_executing_workspace_token(token: str, executing_workspace: Optional[str]) -> str:
-    KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
-    REALM = os.environ.get("KEYCLOAK_REALM")
-    CLIENT_ID = os.environ.get("CLIENT_ID")
-    CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
-
-    KEYCLOAK_URL = f"https://{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
-    scope = f"user_services:{executing_workspace}"
-
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": token,
-        "scope": scope,
-    }
-
-    response = requests.post(
-        KEYCLOAK_URL,
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-
-    if response.status_code != 200:
-        print(f"Failed to generate executing workspace token: {response.text}", file=sys.stderr)
-        raise ValueError(f"Failed to generate executing workspace token: {response.text}")
-
-    try:
-        access_token = response.json().get("access_token")
-    except Exception as e:
-        print(f"Failed to generate executing workspace token: {e}", file=sys.stderr)
-        raise
-
-    if not access_token:
-        print(
-            f"Failed to generate executing workspace token, token is None: {response.text}",
-            file=sys.stderr,
-        )
-        raise ValueError(f"Failed to generate executing workspace token: {response.text}")
-
-    return access_token
-
-
-def generate_aws_credentials(
-    role_arn: str,
-    creds_filepath: str,
-    token: str,
-    calling_workspace: Optional[str] = None,
-    executing_workspace: Optional[str] = None,
-    save: bool = False,
-    additional_path: Optional[str] = None,
-) -> dict:
-
-    if not calling_workspace and not executing_workspace:
-        raise ValueError("Either calling_workspace or executing_workspace must be provided")
-
-    # Generate and save AWS credentials
-    sts_client = boto3.client("sts")
-
-    if calling_workspace:
-        workspace_token = generate_calling_workspace_token(token, calling_workspace)
-        session_name = f"calling_{calling_workspace}_session"
-    elif executing_workspace:
-        workspace_token = generate_executing_workspace_token(token, executing_workspace)
-        session_name = f"executing_{executing_workspace}_session"
-
-    role = sts_client.assume_role_with_web_identity(
-        RoleArn=role_arn,
-        RoleSessionName=session_name,
-        WebIdentityToken=workspace_token,
-    )
-    creds = role["Credentials"]
-
-    if save:
-        # Save credentials to volume for further mounting
-        with open(creds_filepath, "w") as f:
-            f.write("[default]\n")
-            f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
-            f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
-            f.write(f"aws_session_token = {creds['SessionToken']}\n")
-        print(f"AWS credentials generated and saved to {creds_filepath}", file=sys.stderr)
-
-        if additional_path:
-            with open(additional_path, "w") as f:
-                f.write("[default]\n")
-                f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
-                f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
-                f.write(f"aws_session_token = {creds['SessionToken']}\n")
-            print(f"Credentials additionally saved to {additional_path}", file=sys.stderr)
-
-    return creds
-
-
-def get_aws_client(creds: dict) -> boto3.client:
+def get_aws_client() -> boto3.client:
     # Configure AWS client
-    try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=creds["AccessKeyId"],
-            aws_secret_access_key=creds["SecretAccessKey"],
-            aws_session_token=creds["SessionToken"],
-        )
-    except Exception as e:
-        print(f"Failed to configure AWS client: {e}", file=sys.stderr)
-        raise
+    if (
+        os.getenv("AWS_ACCESS_KEY_ID")
+        and os.getenv("AWS_SECRET_ACCESS_KEY")
+        and os.getenv("AWS_SESSION_TOKEN")
+    ):
+        try:
+            s3_client = boto3.client(
+                service_name="s3",
+                use_ssl=True,
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                aws_session_token=os.environ.get("AWS_SESSION_TOKEN"),
+            )
+        except Exception as e:
+            print(f"Failed to configure AWS client: {e}", file=sys.stderr)
+            raise
+    else:
+        raise ValueError("AWS credentials not provided")
     return s3_client
 
 
 if __name__ == "__main__":
 
     config = stac_asset.Config(warn=True)
-    location = None
-    token = sys.argv[1]
-    if len(sys.argv) > 2:
-        location = sys.argv[2]
-    workspace_role_arn = os.getenv("AWS_ROLE_ARN_WORKSPACE")
-    user_service_role_arn = os.getenv("AWS_ROLE_ARN_USER_SERVICE")
-    region_name = os.getenv("AWS_REGION")
-    aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
-    aws_creds_directory = os.path.dirname(aws_creds_path)
-    endpoint_url = os.getenv("AWS_S3_ENDPOINT")
-    calling_workspace = os.getenv("CALLING_WORKSPACE")
-    executing_workspace = os.getenv("EXECUTING_WORKSPACE")
-
-    # Determine if this is a user service
-    user_service = calling_workspace != executing_workspace
-
-    creds = {}
-
-    # Generate workspace access creds
-    creds = generate_aws_credentials(
-        workspace_role_arn,
-        f"{aws_creds_directory}/workspace/credentials",
-        token,
-        calling_workspace=calling_workspace,
-        save=True,
-        additional_path=f"{aws_creds_directory}/service/credentials" if not user_service else None,
-    )
-
-    if user_service:
-        # Generate user service credentials
-        generate_aws_credentials(
-            user_service_role_arn,
-            f"{aws_creds_directory}/service/credentials",
-            token,
-            executing_workspace=executing_workspace,
-            save=True,
-        )
+    location = sys.argv[2]
 
     if location:
         if location.startswith("s3://"):
-            s3_client = get_aws_client(creds)
+            s3_client = get_aws_client()
             cat = asyncio.run(stage_s3(config, location, s3_client))
         elif is_valid_url(location):
             cat = asyncio.run(stage_url_or_path(config, location))
