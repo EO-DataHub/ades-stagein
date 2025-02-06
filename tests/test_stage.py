@@ -12,6 +12,7 @@ from stage import (
     get_aws_client,
     is_valid_file_path,
     is_valid_url,
+    main,
     parse_s3_url_components,
     stage_s3,
     stage_url_or_path,
@@ -548,3 +549,87 @@ def test_get_aws_client_missing_creds(mock_boto3_client):
         get_aws_client()
 
     mock_boto3_client.assert_not_called()
+
+
+@patch("stage.get_aws_client")
+@patch("stage.stage_s3")
+def test_main_s3(mock_stage_s3, mock_get_aws_client):
+    # Mock the AWS client
+    mock_s3_client = mock.Mock()
+    mock_get_aws_client.return_value = mock_s3_client
+
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_s3.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    location = "s3://bucket-name/path/to/item.json"
+
+    # call function
+    result = main(config, location)
+
+    # Assert the calls
+    mock_get_aws_client.assert_called_once()
+    mock_stage_s3.assert_called_once_with(config, location, mock_s3_client)
+
+    assert result == mock_catalog
+
+
+@patch("stage.stage_url_or_path")
+def test_main_file_path(mock_stage_url_or_path):
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_url_or_path.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    location = "/workspace/workpsace-name/path/to/item.json"
+
+    # call function
+    result = main(config, location)
+
+    # Assert the calls
+    mock_stage_url_or_path.assert_called_once_with(config, location)
+
+    assert result == mock_catalog
+
+
+@patch("stage.stage_url_or_path")
+def test_main_url(mock_stage_url_or_path):
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_url_or_path.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    location = "https://example-data.org/workspace/workpsace-name/path/to/item.json"
+
+    # call function
+    result = main(config, location)
+
+    # Assert the calls
+    mock_stage_url_or_path.assert_called_once_with(config, location)
+
+    assert result == mock_catalog
+
+
+@patch("stage.stage_url_or_path")
+def test_main_invalid_location(mock_stage_url_or_path):
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_url_or_path.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    # Invalid URL or file path
+    location = "https:/example-data.org/workspace/workpsace-name/path/to/item.json"
+
+    # call function
+    with pytest.raises(ValueError) as e:
+        main(config, location)
+
+    # Assert the error
+    assert str(e.value) == f"Location {location} is not a valid S3 key, URL or file path"
+    # Assert the calls
+    mock_stage_url_or_path.assert_not_called()
