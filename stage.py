@@ -190,18 +190,23 @@ def get_aws_client() -> boto3.client:
     return s3_client
 
 
+def main(config: stac_asset.Config, location: str):
+    if location.startswith("s3://"):
+        s3_client = get_aws_client()
+        cat = asyncio.run(stage_s3(config, location, s3_client))
+    elif is_valid_url(location):
+        cat = asyncio.run(stage_url_or_path(config, location))
+    elif is_valid_file_path(location):
+        cat = asyncio.run(stage_url_or_path(config, location))
+    else:
+        raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
+
+    return cat
+
+
 if __name__ == "__main__":
 
     config = stac_asset.Config(warn=True)
     location = sys.argv[1]
 
-    if location:
-        if location.startswith("s3://"):
-            s3_client = get_aws_client()
-            cat = asyncio.run(stage_s3(config, location, s3_client))
-        elif is_valid_url(location):
-            cat = asyncio.run(stage_url_or_path(config, location))
-        elif is_valid_file_path(location):
-            cat = asyncio.run(stage_url_or_path(config, location))
-        else:
-            raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
+    cat = main(config, location)
