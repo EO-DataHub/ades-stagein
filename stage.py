@@ -193,7 +193,7 @@ def get_aws_client() -> boto3.client:
 if __name__ == "__main__":
 
     config = stac_asset.Config(warn=True)
-    location = sys.argv[2]
+    location = sys.argv[1]
 
     if location:
         if location.startswith("s3://"):
