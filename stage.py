@@ -10,40 +10,46 @@ from urllib.parse import ParseResult, urljoin, urlparse
 import boto3
 import botocore
 import pystac
-import pystac_client
 import requests
 import stac_asset
 
-RESOURCE_CATALOGUE_PREFIX = os.getenv(
-    "RESOURCE_CATALOGUE_PREFIX", "https://staging.eodatahub.org.uk/api/catalogue/stac/"
+DATAHUB_DOMAIN = os.getenv("DATAHUB_DOMAIN", "staging.eodatahub.org.uk")
+
+DATAHUB_WORKSPACE_DOMAIN = os.getenv(
+    "DATAHUB_WORKSPACE_DOMAIN", "staging.eodatahub-workspaces.org.uk"
 )
 
-DATAHUB_WORKSPACE_PREFIX = os.getenv(
-    "DATAHUB_WORKSPACE_PREFIX", "https://staging.eodatahub.org.uk/api/catalogue/stac/"
-)
+API_TOKEN = os.getenv("API_TOKEN", "your_token_value")
 
 
-async def stage_url_or_path(
-    config: stac_asset.Config,
+async def stage_url(
     location: str,
     token: Optional[str] = None,
-    resource_catalogue_prefix: Optional[str] = None,
-    datahub_workspace_prefix: Optional[str] = None,
+    datahub_domain: Optional[str] = None,
+    datahub_workspace_domain: Optional[str] = None,
 ) -> pystac.Catalog:
-    """Stage in a STAC item from a URL or file path."""
-
-    print(f"Stage in STAC data at {location}", file=sys.stderr)
-
+    """Stage in a STAC item from a URL."""
     try:
+        parsed_url = urlparse(location)
+        domain = parsed_url.netloc
+        split_domain = domain.split(".", 1)[1]
         # Check if location is within the EODataHub Resource Catalogue
         # If token is provided, pass it to the API
-        if (
-            resource_catalogue_prefix and token and location.startswith(resource_catalogue_prefix)
-        ) or (datahub_workspace_prefix and token and location.startswith(datahub_workspace_prefix)):
-            item = pystac_client.Client.open(location, headers={"Authorization": f"Bearer {token}"})
+        if datahub_domain and domain == datahub_domain:
+            if token:
+                response = requests.get(location, headers={"Authorization": f"Bearer {token}"})
+            else:
+                response = requests.get(location)
+            item = pystac.Item.from_dict(response.json())
+        elif datahub_workspace_domain and split_domain == datahub_workspace_domain:
+            if token:
+                response = requests.get(location, headers={"Authorization": f"Bearer {token}"})
+            else:
+                response = requests.get(location)
+            item = pystac.Item.from_dict(response.json())
         else:
-            # Otherwise attempt to access public data
-            item = pystac.read_file(location)
+            response = requests.get(location)
+            item = pystac.Item.from_dict(response.json())
     except FileNotFoundError:
         print(f"The file at {location} was not found.", file=sys.stderr)
         raise
@@ -54,9 +60,81 @@ async def stage_url_or_path(
         print(f"Failed to read item at {location}: {e}", file=sys.stderr)
         raise
 
+    return item
+
+
+async def stage_path(
+    location: str,
+) -> pystac.Catalog:
+    """Stage in a STAC item from a file path."""
+    try:
+        item = pystac.read_file(location)
+    except FileNotFoundError:
+        print(f"The file at {location} was not found.", file=sys.stderr)
+        raise
+    except JSONDecodeError:
+        print(f"The file at {location} is not a valid JSON file.", file=sys.stderr)
+        raise
+    except Exception as e:
+        print(f"Failed to read item at {location}: {e}", file=sys.stderr)
+        raise
+
+    return item
+
+
+async def stage_url_or_path(
+    config: stac_asset.Config,
+    location: str,
+    token: Optional[str] = None,
+    datahub_domain: Optional[str] = None,
+    datahub_workspace_domain: Optional[str] = None,
+) -> pystac.Catalog:
+    """Stage in a STAC item from a URL or file path."""
+
+    print(f"Stage in STAC data at {location}", file=sys.stderr)
+
+    if is_valid_url(location):
+        item = await stage_url(location, token, datahub_domain, datahub_workspace_domain)
+    elif is_valid_file_path(location):
+        item = await stage_path(location)
+    else:
+        raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
+
     os.makedirs(item.id, exist_ok=True)
     cwd = os.getcwd()
     os.chdir(item.id)
+
+    # Remove other links from item to avoid auth issues
+    item.links = [link for link in item.links if link.rel == "self"]
+
+    # Check if assets contain links to DataHub data
+    for _, asset in item.assets.items():
+        asset_href = asset.href
+        print(asset_href)
+        parsed_url = urlparse(asset_href)
+        domain = parsed_url.netloc
+        try:
+            split_domain = domain.split(".", 1)[1]
+            # Check if location is within the EODataHub Resource Catalogue
+            # If token is provided, pass it to the API
+            if datahub_workspace_domain and split_domain == datahub_workspace_domain:
+                if token:
+                    print(f"Trying to download {asset_href} with api token")
+                    ## Download data from href and save to file
+                    response = requests.get(
+                        asset_href, headers={"Authorization": f"Bearer {token}"}
+                    )
+                    print(response.status_code)
+                    if response.status_code == 200:
+                        filename = os.path.basename(asset_href)
+                        print(f"Downloading {asset_href} to {filename}", file=sys.stderr)
+                        with open(f"{filename}", "wb") as f:
+                            f.write(response.content)
+                    else:
+                        print(f"Failed to download {asset_href}: {response.status_code}")
+        except IndexError:
+            print(f"Error parsing domain from {asset_href}")
+            continue
 
     item = await stac_asset.download_item(item=item, directory=".", config=config)
     print(f"Item and assets downloaded: {os.listdir('.')}", file=sys.stderr)
@@ -174,7 +252,7 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
     return cat
 
 
-def is_valid_url(url: str):
+def is_valid_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
         return bool(parsed.scheme) and bool(parsed.netloc)
@@ -192,179 +270,45 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
-def generate_calling_workspace_token(token: str, calling_workspace: Optional[str]):
-    KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
-    REALM = os.environ.get("KEYCLOAK_REALM")
-    CLIENT_ID = os.environ.get("CLIENT_ID")
-    CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
-
-    KEYCLOAK_URL = f"https://{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
-    scope = f"workspace:{calling_workspace}"
-
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": token,
-        "scope": scope,
-    }
-
-    response = requests.post(
-        KEYCLOAK_URL,
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-
-    return response.json().get("access_token")
-
-
-def generate_executing_workspace_token(token: str, executing_workspace: Optional[str]):
-    KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_BASE_URL")
-    REALM = os.environ.get("KEYCLOAK_REALM")
-    CLIENT_ID = os.environ.get("CLIENT_ID")
-    CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
-
-    KEYCLOAK_URL = f"https://{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
-    scope = f"user_services:{executing_workspace}"
-
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": token,
-        "scope": scope,
-    }
-
-    response = requests.post(
-        KEYCLOAK_URL,
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-
-    return response.json().get("access_token")
-
-
-def generate_aws_credentials(
-    role_arn: str,
-    creds_filepath: str,
-    token: str,
-    calling_workspace: Optional[str] = None,
-    executing_workspace: Optional[str] = None,
-    save: bool = False,
-    additional_path: Optional[str] = None,
-) -> dict:
-
-    if not calling_workspace and not executing_workspace:
-        raise ValueError("Either calling_workspace or executing_workspace must be provided")
-
-    # Generate and save AWS credentials
-    sts_client = boto3.client("sts")
-
-    if calling_workspace:
-        workspace_token = generate_calling_workspace_token(token, calling_workspace)
-        session_name = f"calling_{calling_workspace}_session"
-    elif executing_workspace:
-        workspace_token = generate_executing_workspace_token(token, executing_workspace)
-        session_name = f"executing_{executing_workspace}_session"
-
-    role = sts_client.assume_role_with_web_identity(
-        RoleArn=role_arn,
-        RoleSessionName=session_name,
-        WebIdentityToken=workspace_token,
-    )
-    creds = role["Credentials"]
-
-    if save:
-        # Save credentials to volume for further mounting
-        with open(creds_filepath, "w") as f:
-            f.write("[default]\n")
-            f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
-            f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
-            f.write(f"aws_session_token = {creds['SessionToken']}\n")
-        print(f"AWS credentials generated and saved to {creds_filepath}", file=sys.stderr)
-
-        if additional_path:
-            with open(additional_path, "w") as f:
-                f.write("[default]\n")
-                f.write(f"aws_access_key_id = {creds['AccessKeyId']}\n")
-                f.write(f"aws_secret_access_key = {creds['SecretAccessKey']}\n")
-                f.write(f"aws_session_token = {creds['SessionToken']}\n")
-            print(f"Credentials additionally saved to {additional_path}", file=sys.stderr)
-
-    return creds
-
-
-def get_aws_client(creds: dict) -> boto3.client:
+def get_aws_client() -> boto3.client:
     # Configure AWS client
-    try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=creds["AccessKeyId"],
-            aws_secret_access_key=creds["SecretAccessKey"],
-            aws_session_token=creds["SessionToken"],
-        )
-    except Exception as e:
-        print(f"Failed to configure AWS client: {e}", file=sys.stderr)
-        raise
+    if (
+        os.getenv("AWS_ACCESS_KEY_ID")
+        and os.getenv("AWS_SECRET_ACCESS_KEY")
+        and os.getenv("AWS_SESSION_TOKEN")
+    ):
+        try:
+            s3_client = boto3.client(
+                service_name="s3",
+                use_ssl=True,
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                aws_session_token=os.environ.get("AWS_SESSION_TOKEN"),
+            )
+        except Exception as e:
+            print(f"Failed to configure AWS client: {e}", file=sys.stderr)
+            raise
+    else:
+        raise ValueError("AWS credentials not provided")
     return s3_client
+
+
+def main(config: stac_asset.Config, location: str):
+    if location.startswith("s3://"):
+        s3_client = get_aws_client()
+        cat = asyncio.run(stage_s3(config, location, s3_client))
+    else:
+        cat = asyncio.run(
+            stage_url_or_path(config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN)
+        )
+    return cat
 
 
 if __name__ == "__main__":
 
     config = stac_asset.Config(warn=True)
-    location = None
-    token = sys.argv[1]
-    if len(sys.argv) > 2:
-        location = sys.argv[2]
-    workspace_role_arn = os.getenv("AWS_ROLE_ARN_WORKSPACE")
-    user_service_role_arn = os.getenv("AWS_ROLE_ARN_USER_SERVICE")
-    region_name = os.getenv("AWS_REGION")
-    aws_creds_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
-    aws_creds_directory = os.path.dirname(aws_creds_path)
-    endpoint_url = os.getenv("AWS_S3_ENDPOINT")
-    calling_workspace = os.getenv("CALLING_WORKSPACE")
-    executing_workspace = os.getenv("EXECUTING_WORKSPACE")
+    location = sys.argv[1]
 
-    # Determine if this is a user service
-    user_service = calling_workspace != executing_workspace
+    cat = main(config, location)
 
-    creds = {}
-
-    # Generate workspace access creds
-    creds = generate_aws_credentials(
-        workspace_role_arn,
-        f"{aws_creds_directory}/workspace/credentials",
-        token,
-        calling_workspace=calling_workspace,
-        save=True,
-        additional_path=f"{aws_creds_directory}/service/credentials" if not user_service else None,
-    )
-
-    if user_service:
-        # Generate user service credentials
-        generate_aws_credentials(
-            user_service_role_arn,
-            f"{aws_creds_directory}/service/credentials",
-            token,
-            executing_workspace=executing_workspace,
-            save=True,
-        )
-
-    if location:
-        if location.startswith("s3://"):
-            s3_client = get_aws_client(creds)
-            cat = asyncio.run(stage_s3(config, location, s3_client))
-        elif is_valid_url(location):
-            cat = asyncio.run(
-                stage_url_or_path(
-                    config,
-                    location,
-                    token=token,
-                    resource_catalogue_prefix=RESOURCE_CATALOGUE_PREFIX,
-                    datahub_workspace_prefix=DATAHUB_WORKSPACE_PREFIX,
-                )
-            )
-        elif is_valid_file_path(location):
-            cat = asyncio.run(stage_url_or_path(config, location))
-        else:
-            raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
+    print(f"Catalog {cat.id} staged successfully.", file=sys.stderr)

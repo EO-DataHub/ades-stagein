@@ -1,6 +1,7 @@
+import os
 from json.decoder import JSONDecodeError
 from unittest import mock
-from unittest.mock import mock_open, patch
+from unittest.mock import patch
 from urllib.parse import urlparse
 
 import pystac
@@ -8,13 +9,31 @@ import pytest
 
 from stage import (
     download_s3,
-    generate_aws_credentials,
+    get_aws_client,
     is_valid_file_path,
     is_valid_url,
+    main,
     parse_s3_url_components,
     stage_s3,
     stage_url_or_path,
 )
+
+
+@pytest.fixture()
+def setenvvar(monkeypatch):
+    with mock.patch.dict(os.environ, clear=True):
+        envvars = {
+            "KEYCLOAK_BASE_URL": "keycloak-base-url",
+            "KEYCLOAK_REALM": "test-realm",
+            "CLIENT_ID": "client-id",
+            "CLIENT_SECRET": "client-secret",
+            "AWS_ACCESS_KEY_ID": "aws-access-key",
+            "AWS_SECRET_ACCESS_KEY": "aws-secret-key",
+            "AWS_SESSION_TOKEN": "session-token",
+        }
+        for k, v in envvars.items():
+            monkeypatch.setenv(k, v)
+        yield
 
 
 @patch("pystac.Catalog")
@@ -560,165 +579,115 @@ def test_is_valid_file_path_invalid():
     assert not result
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
-@patch("requests.post")
-@patch("stage.get_current_namespace")
 @patch("boto3.client")
-def test_generate_aws_credentials_calling_workspace(
-    mock_boto3_client, mock_get_current_namespace, mock_post
-):
-    # role_arn: str, token: str, aws_creds_path: str
-    # configure mocks
-    mock_sts_client = mock.Mock()
-    mock_sts_client.assume_role_with_web_identity.return_value = {
-        "Credentials": {
-            "AccessKeyId": "test-access-key",
-            "SecretAccessKey": "test-secret-key",
-            "SessionToken": "test-session-token",
+def test_get_aws_client(mock_boto3_client, setenvvar):
+    mock_boto3_client_instance = mock.Mock()
+    mock_boto3_client.return_value = mock_boto3_client_instance
+    result = get_aws_client()
+
+    mock_boto3_client.assert_called_once_with(
+        **{
+            "service_name": "s3",
+            "use_ssl": True,
+            "aws_access_key_id": "aws-access-key",
+            "aws_secret_access_key": "aws-secret-key",
+            "aws_session_token": "session-token",
         }
-    }
-    mock_boto3_client.return_value = mock_sts_client
-    mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
-
-    role_arn = "arn::example-arn"
-    aws_creds_path = "/tmp/aws-credentials/credentials"
-    token = "valid_token"
-    workspace = "test-workspace"
-
-    # Mock the open function
-    m = mock_open()
-    with patch("builtins.open", m):
-        generate_aws_credentials(
-            role_arn, aws_creds_path, token, calling_workspace=workspace, save=True
-        )
-
-    handle = m()
-    handle.write.assert_any_call("[default]\n")
-    handle.write.assert_any_call("aws_access_key_id = test-access-key\n")
-    handle.write.assert_any_call("aws_secret_access_key = test-secret-key\n")
-    handle.write.assert_any_call("aws_session_token = test-session-token\n")
-
-    payload = {
-        "client_id": "client-id",
-        "client_secret": "client-secret",
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": "valid_token",
-        "scope": f"workspace:{workspace}",
-    }
-
-    mock_post.assert_called_once_with(
-        "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token",
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
+    assert result == mock_boto3_client_instance
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
-@patch("requests.post")
-@patch("stage.get_current_namespace")
+
 @patch("boto3.client")
-def test_generate_aws_credentials_user_service(
-    mock_boto3_client, mock_get_current_namespace, mock_post
-):
-    # role_arn: str, token: str, aws_creds_path: str
-    # configure mocks
-    mock_sts_client = mock.Mock()
-    mock_sts_client.assume_role_with_web_identity.return_value = {
-        "Credentials": {
-            "AccessKeyId": "test-access-key",
-            "SecretAccessKey": "test-secret-key",
-            "SessionToken": "test-session-token",
-        }
-    }
-    mock_boto3_client.return_value = mock_sts_client
-    mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+def test_get_aws_client_missing_creds(mock_boto3_client):
+    mock_boto3_client_instance = mock.Mock()
+    mock_boto3_client.return_value = mock_boto3_client_instance
 
-    role_arn = "arn::example-arn"
-    aws_creds_path = "/tmp/aws-credentials/credentials"
-    token = "valid_token"
-    user_service = True
+    with pytest.raises(ValueError):
+        get_aws_client()
 
-    # Mock the open function
-    m = mock_open()
-    with patch("builtins.open", m):
-        generate_aws_credentials(
-            role_arn, aws_creds_path, token, executing_workspace=user_service, save=True
-        )
-
-    handle = m()
-    handle.write.assert_any_call("[default]\n")
-    handle.write.assert_any_call("aws_access_key_id = test-access-key\n")
-    handle.write.assert_any_call("aws_secret_access_key = test-secret-key\n")
-    handle.write.assert_any_call("aws_session_token = test-session-token\n")
-
-    payload = {
-        "client_id": "client-id",
-        "client_secret": "client-secret",
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": "valid_token",
-        "scope": f"user_services:{user_service}",
-    }
-
-    mock_post.assert_called_once_with(
-        "https://keycloak-base-url/realms/test-realm/protocol/openid-connect/token",
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
+    mock_boto3_client.assert_not_called()
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "KEYCLOAK_BASE_URL": "keycloak-base-url",
-        "KEYCLOAK_REALM": "test-realm",
-        "CLIENT_ID": "client-id",
-        "CLIENT_SECRET": "client-secret",
-    },
-)
-@patch("requests.post")
-@patch("stage.get_current_namespace")
-@patch("boto3.client")
-def test_generate_aws_credentials_value_error(
-    mock_boto3_client, mock_get_current_namespace, mock_post
-):
-    # role_arn: str, token: str, aws_creds_path: str
-    # configure mocks
-    mock_sts_client = mock.Mock()
-    mock_sts_client.assume_role_with_web_identity.return_value = {
-        "Credentials": {
-            "AccessKeyId": "test-access-key",
-            "SecretAccessKey": "test-secret-key",
-            "SessionToken": "test-session-token",
-        }
-    }
-    mock_boto3_client.return_value = mock_sts_client
-    mock_get_current_namespace.return_value = "test-namespace"
-    mock_post.return_value = mock.MagicMock(json=lambda: {"access-token": "valid-token"})
+@patch("stage.get_aws_client")
+@patch("stage.stage_s3")
+def test_main_s3(mock_stage_s3, mock_get_aws_client):
+    # Mock the AWS client
+    mock_s3_client = mock.Mock()
+    mock_get_aws_client.return_value = mock_s3_client
 
-    role_arn = "arn::example-arn"
-    aws_creds_path = "/tmp/aws-credentials/credentials"
-    token = "valid_token"
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_s3.return_value = mock_catalog
 
-    # Mock the open function
-    m = mock_open()
-    with patch("builtins.open", m):
-        with pytest.raises(ValueError):
-            generate_aws_credentials(role_arn, aws_creds_path, token, save=True)
+    # Example inputs
+    config = "test-config"
+    location = "s3://bucket-name/path/to/item.json"
+
+    # call function
+    result = main(config, location)
+
+    # Assert the calls
+    mock_get_aws_client.assert_called_once()
+    mock_stage_s3.assert_called_once_with(config, location, mock_s3_client)
+
+    assert result == mock_catalog
+
+
+@patch("stage.stage_url_or_path")
+def test_main_file_path(mock_stage_url_or_path):
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_url_or_path.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    location = "/workspace/workpsace-name/path/to/item.json"
+
+    # call function
+    result = main(config, location)
+
+    # Assert the calls
+    mock_stage_url_or_path.assert_called_once_with(config, location)
+
+    assert result == mock_catalog
+
+
+@patch("stage.stage_url_or_path")
+def test_main_url(mock_stage_url_or_path):
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_url_or_path.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    location = "https://example-data.org/workspace/workpsace-name/path/to/item.json"
+
+    # call function
+    result = main(config, location)
+
+    # Assert the calls
+    mock_stage_url_or_path.assert_called_once_with(config, location)
+
+    assert result == mock_catalog
+
+
+@patch("stage.stage_url_or_path")
+def test_main_invalid_location(mock_stage_url_or_path):
+    # Mock the catalog
+    mock_catalog = mock.Mock()
+    mock_stage_url_or_path.return_value = mock_catalog
+
+    # Example inputs
+    config = "test-config"
+    # Invalid URL or file path
+    location = "https:/example-data.org/workspace/workpsace-name/path/to/item.json"
+
+    # call function
+    with pytest.raises(ValueError) as e:
+        main(config, location)
+
+    # Assert the error
+    assert str(e.value) == f"Location {location} is not a valid S3 key, URL or file path"
+    # Assert the calls
+    mock_stage_url_or_path.assert_not_called()
