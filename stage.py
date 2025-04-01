@@ -15,7 +15,11 @@ import requests
 import stac_asset
 
 RESOURCE_CATALOGUE_PREFIX = os.getenv(
-    "RESOURCE_CATALOGUE_PREFIX", "https://test.eodatahub.org.uk/api/catalogue/stac/"
+    "RESOURCE_CATALOGUE_PREFIX", "https://staging.eodatahub.org.uk/api/catalogue/stac/"
+)
+
+DATAHUB_WORKSPACE_PREFIX = os.getenv(
+    "DATAHUB_WORKSPACE_PREFIX", "https://staging.eodatahub.org.uk/api/catalogue/stac/"
 )
 
 
@@ -24,6 +28,7 @@ async def stage_url_or_path(
     location: str,
     token: Optional[str] = None,
     resource_catalogue_prefix: Optional[str] = None,
+    datahub_workspace_prefix: Optional[str] = None,
 ) -> pystac.Catalog:
     """Stage in a STAC item from a URL or file path."""
 
@@ -32,7 +37,9 @@ async def stage_url_or_path(
     try:
         # Check if location is within the EODataHub Resource Catalogue
         # If token is provided, pass it to the API
-        if resource_catalogue_prefix and token and location.startswith(resource_catalogue_prefix):
+        if (
+            resource_catalogue_prefix and token and location.startswith(resource_catalogue_prefix)
+        ) or (datahub_workspace_prefix and token and location.startswith(datahub_workspace_prefix)):
             item = pystac_client.Client.open(location, headers={"Authorization": f"Bearer {token}"})
         else:
             # Otherwise attempt to access public data
@@ -354,6 +361,7 @@ if __name__ == "__main__":
                     location,
                     token=token,
                     resource_catalogue_prefix=RESOURCE_CATALOGUE_PREFIX,
+                    datahub_workspace_prefix=DATAHUB_WORKSPACE_PREFIX,
                 )
             )
         elif is_valid_file_path(location):
