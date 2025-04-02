@@ -416,7 +416,7 @@ async def test_stage_url_or_path_auth(
 
 
 @pytest.mark.asyncio
-async def test_stage_url_or_path_not_found(requests_mock, capsys):
+async def test_stage_url_or_path_not_found(requests_mock, caplog):
 
     # Configure mocks
     mock_response = mock.Mock()
@@ -434,11 +434,11 @@ async def test_stage_url_or_path_not_found(requests_mock, capsys):
         assert not result
 
     # Assert error is handle as expected
-    assert f"Failed to read item at {location}" in capsys.readouterr().err
+    assert f"Failed to read item at {location}" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_stage_url_or_path_json_decode_error(requests_mock, capsys):
+async def test_stage_url_or_path_json_decode_error(requests_mock, caplog):
 
     # Configure mocks
     requests_mock.get(
@@ -457,12 +457,12 @@ async def test_stage_url_or_path_json_decode_error(requests_mock, capsys):
         assert not result
 
     # Assert error is handle as expected
-    assert f"The file at {location} is not a valid JSON file." in capsys.readouterr().err
+    assert f"The file at {location} is not a valid JSON file." in caplog.text
 
 
 @pytest.mark.asyncio
 @patch("requests.get")
-async def test_stage_url_or_path_error(mock_requests_get, capsys):
+async def test_stage_url_or_path_error(mock_requests_get, caplog):
 
     # Configure mocks
     mock_requests_get.side_effect = RuntimeError("Internal Server Error")
@@ -480,7 +480,7 @@ async def test_stage_url_or_path_error(mock_requests_get, capsys):
         assert not result
 
     # Assert error is handle as expected
-    assert "Failed to read item at https://example.com/item.json: " in capsys.readouterr().err
+    assert "Failed to read item at https://example.com/item.json: " in caplog.text
 
 
 @patch("os.path.abspath")
