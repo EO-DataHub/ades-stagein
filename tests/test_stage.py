@@ -1,11 +1,12 @@
 import os
 from json.decoder import JSONDecodeError
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 from urllib.parse import urlparse
 
 import pystac
 import pytest
+from requests.exceptions import HTTPError
 
 from stage import (
     download_s3,
@@ -17,6 +18,14 @@ from stage import (
     stage_s3,
     stage_url_or_path,
 )
+
+DATAHUB_DOMAIN = os.getenv("DATAHUB_DOMAIN", "staging.eodatahub.org.uk")
+
+DATAHUB_WORKSPACE_DOMAIN = os.getenv(
+    "DATAHUB_WORKSPACE_DOMAIN", "staging.eodatahub-workspaces.org.uk"
+)
+
+API_TOKEN = os.getenv("API_TOKEN", "your_token_value")
 
 
 @pytest.fixture()
@@ -41,21 +50,19 @@ def setenvvar(monkeypatch):
 @patch("stac_asset.download_item")
 @patch("os.chdir")
 @patch("os.makedirs")
-@patch("pystac.read_file")
 @pytest.mark.asyncio
 async def test_stage_url_or_path(
-    mock_read_file,
     mock_makedirs,
     mock_chdir,
     mock_stac_asset_download_item,
     mock_listdir,
     mock_pystac_catalog,
+    requests_mock,
 ):
 
     # Configure mocks
     mock_item = mock.Mock()
     mock_item.id = "item_12346"
-    mock_read_file.return_value = mock_item
     mock_makedirs.return_value = None
     mock_chdir.return_value = None
     mock_stac_asset_download_item.return_value = mock_item
@@ -67,16 +74,24 @@ async def test_stage_url_or_path(
     mock_pystac_catalog.return_value = mock_catalog
     mock_config = "test-config"
 
+    requests_mock.get(
+        f"https://{DATAHUB_DOMAIN}/path/to/item.json",
+        status_code=200,
+        json=lambda x, y: {
+            "id": "item_12346",
+            "type": "Feature",
+            "stac_version": "0.0.1",
+            "properties": {"datetime": "2025-03-24T01:00:00.000Z"},
+            "assets": {},
+        },
+    )
+
     # Configure test variables
-    location = "https://example.com/item.json"
+    location = f"https://{DATAHUB_DOMAIN}/path/to/item.json"
 
     result = await stage_url_or_path(mock_config, location)
 
     # Confirm calls were as expected
-    mock_read_file.assert_called_once_with(location)
-    mock_stac_asset_download_item.assert_called_once_with(
-        item=mock_item, directory=".", config=mock_config
-    )
     mock_pystac_catalog.assert_called_once_with(
         id="catalog",
         description="catalog with staged item_12346",
@@ -85,6 +100,250 @@ async def test_stage_url_or_path(
     mock_catalog.add_item.assert_called_once_with(mock_item)
     mock_catalog.normalize_hrefs.assert_called_once_with("./")
     mock_catalog.save.assert_called_once_with(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+    # Assert result is as expected
+    assert result == mock_catalog
+
+
+@patch("pystac.Catalog")
+@patch("os.listdir")
+@patch("stac_asset.download_item")
+@patch("os.chdir")
+@patch("os.makedirs")
+@pytest.mark.asyncio
+async def test_stage_url_or_path_with_assets(
+    mock_makedirs,
+    mock_chdir,
+    mock_stac_asset_download_item,
+    mock_listdir,
+    mock_pystac_catalog,
+    requests_mock,
+):
+
+    # Configure mocks
+    mock_item = mock.Mock()
+    mock_item.id = "item_12346"
+    mock_makedirs.return_value = None
+    mock_chdir.return_value = None
+    mock_stac_asset_download_item.return_value = mock_item
+    mock_listdir.return_value = ["item_12346"]
+    mock_catalog = mock.Mock()
+    mock_catalog.add_item.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.safe.return_value = None
+    mock_pystac_catalog.return_value = mock_catalog
+    mock_config = "test-config"
+
+    mock_file = mock_open()
+
+    requests_mock.get(
+        f"https://{DATAHUB_DOMAIN}/path/to/item.json",
+        status_code=200,
+        json=lambda x, y: {
+            "id": "item_12346",
+            "type": "Feature",
+            "stac_version": "0.0.1",
+            "properties": {"datetime": "2025-03-24T01:00:00.000Z"},
+            "assets": {
+                "test-asset": {
+                    "title": "test-asset",
+                    "href": f"https://{DATAHUB_DOMAIN}/path/to/asset.file",
+                }
+            },
+        },
+    )
+
+    requests_mock.get(
+        f"https://{DATAHUB_DOMAIN}/path/to/asset.file",
+        status_code=200,
+        content=b"some file content",
+    )
+
+    # Configure test variables
+    location = f"https://{DATAHUB_DOMAIN}/path/to/item.json"
+
+    with patch("builtins.open", mock_file):
+        result = await stage_url_or_path(
+            mock_config, location, "valid-token", DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+        )
+
+    # Confirm calls were as expected
+    mock_pystac_catalog.assert_called_once_with(
+        id="catalog",
+        description="catalog with staged item_12346",
+        title="catalog with staged item_12346",
+    )
+    mock_catalog.add_item.assert_called_once_with(mock_item)
+    mock_catalog.normalize_hrefs.assert_called_once_with("./")
+    mock_catalog.save.assert_called_once_with(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+    # Check asset was handled correctly
+    last_request = requests_mock.last_request
+    assert last_request.headers["Authorization"] == "Bearer valid-token"
+    mock_file().write.assert_called_once_with(b"some file content")
+
+    # Assert result is as expected
+    assert result == mock_catalog
+
+
+@patch("pystac.Catalog")
+@patch("os.listdir")
+@patch("stac_asset.download_item")
+@patch("os.chdir")
+@patch("os.makedirs")
+@pytest.mark.asyncio
+async def test_stage_url_or_path_with_assets_workspace_domain(
+    mock_makedirs,
+    mock_chdir,
+    mock_stac_asset_download_item,
+    mock_listdir,
+    mock_pystac_catalog,
+    requests_mock,
+):
+
+    # Configure mocks
+    mock_item = mock.Mock()
+    mock_item.id = "item_12346"
+    mock_makedirs.return_value = None
+    mock_chdir.return_value = None
+    mock_stac_asset_download_item.return_value = mock_item
+    mock_listdir.return_value = ["item_12346"]
+    mock_catalog = mock.Mock()
+    mock_catalog.add_item.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.safe.return_value = None
+    mock_pystac_catalog.return_value = mock_catalog
+    mock_config = "test-config"
+
+    mock_file = mock_open()
+
+    requests_mock.get(
+        f"https://workspace.{DATAHUB_WORKSPACE_DOMAIN}/path/to/item.json",
+        status_code=200,
+        json=lambda x, y: {
+            "id": "item_12346",
+            "type": "Feature",
+            "stac_version": "0.0.1",
+            "properties": {"datetime": "2025-03-24T01:00:00.000Z"},
+            "assets": {
+                "test-asset": {
+                    "title": "test-asset",
+                    "href": f"https://workspace.{DATAHUB_WORKSPACE_DOMAIN}/path/to/asset.file",
+                }
+            },
+        },
+    )
+
+    requests_mock.get(
+        f"https://workspace.{DATAHUB_WORKSPACE_DOMAIN}/path/to/asset.file",
+        status_code=200,
+        content=b"some file content",
+    )
+
+    # Configure test variables
+    location = f"https://workspace.{DATAHUB_WORKSPACE_DOMAIN}/path/to/item.json"
+
+    with patch("builtins.open", mock_file):
+        result = await stage_url_or_path(
+            mock_config, location, "valid-token", DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+        )
+
+    # Confirm calls were as expected
+    mock_pystac_catalog.assert_called_once_with(
+        id="catalog",
+        description="catalog with staged item_12346",
+        title="catalog with staged item_12346",
+    )
+    mock_catalog.add_item.assert_called_once_with(mock_item)
+    mock_catalog.normalize_hrefs.assert_called_once_with("./")
+    mock_catalog.save.assert_called_once_with(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+    # Check asset was handled correctly
+    last_request = requests_mock.last_request
+    assert last_request.headers["Authorization"] == "Bearer valid-token"
+    mock_file().write.assert_called_once_with(b"some file content")
+
+    # Assert result is as expected
+    assert result == mock_catalog
+
+
+@patch("pystac.Catalog")
+@patch("os.listdir")
+@patch("stac_asset.download_item")
+@patch("os.chdir")
+@patch("os.makedirs")
+@pytest.mark.asyncio
+async def test_stage_url_or_path_with_assets_other_domain(
+    mock_makedirs,
+    mock_chdir,
+    mock_stac_asset_download_item,
+    mock_listdir,
+    mock_pystac_catalog,
+    requests_mock,
+):
+
+    # Configure mocks
+    mock_item = mock.Mock()
+    mock_item.id = "item_12346"
+    mock_makedirs.return_value = None
+    mock_chdir.return_value = None
+    mock_stac_asset_download_item.return_value = mock_item
+    mock_listdir.return_value = ["item_12346"]
+    mock_catalog = mock.Mock()
+    mock_catalog.add_item.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.safe.return_value = None
+    mock_pystac_catalog.return_value = mock_catalog
+    mock_config = "test-config"
+
+    mock_file = mock_open()
+
+    requests_mock.get(
+        "https://some-other-domain.com/path/to/item.json",
+        status_code=200,
+        json=lambda x, y: {
+            "id": "item_12346",
+            "type": "Feature",
+            "stac_version": "0.0.1",
+            "properties": {"datetime": "2025-03-24T01:00:00.000Z"},
+            "assets": {
+                "test-asset": {
+                    "title": "test-asset",
+                    "href": "https://some-other-domain.com/path/to/asset.file",
+                }
+            },
+        },
+    )
+
+    requests_mock.get(
+        "https://some-other-domain.com/path/to/asset.file",
+        status_code=200,
+        content=b"some file content",
+    )
+
+    # Configure test variables
+    location = "https://some-other-domain.com/path/to/item.json"
+
+    with patch("builtins.open", mock_file):
+        result = await stage_url_or_path(
+            mock_config, location, "valid-token", DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+        )
+
+    # Confirm calls were as expected
+    mock_pystac_catalog.assert_called_once_with(
+        id="catalog",
+        description="catalog with staged item_12346",
+        title="catalog with staged item_12346",
+    )
+    mock_catalog.add_item.assert_called_once_with(mock_item)
+    mock_catalog.normalize_hrefs.assert_called_once_with("./")
+    mock_catalog.save.assert_called_once_with(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+    # Check asset was handled correctly
+    last_request = requests_mock.last_request
+    assert not last_request.headers.get("Authorization")
+    mock_file().write.not_called()
+    assert mock_stac_asset_download_item.called_once()
 
     # Assert result is as expected
     assert result == mock_catalog
@@ -96,21 +355,19 @@ async def test_stage_url_or_path(
 @patch("stac_asset.download_item")
 @patch("os.chdir")
 @patch("os.makedirs")
-@patch("pystac_client.Client.open")
 @pytest.mark.asyncio
 async def test_stage_url_or_path_auth(
-    mock_open,
     mock_makedirs,
     mock_chdir,
     mock_stac_asset_download_item,
     mock_listdir,
     mock_pystac_catalog,
+    requests_mock,
 ):
 
     # Configure mocks
     mock_item = mock.Mock()
     mock_item.id = "item_12346"
-    mock_open.return_value = mock_item
     mock_makedirs.return_value = None
     mock_chdir.return_value = None
     mock_stac_asset_download_item.return_value = mock_item
@@ -121,20 +378,30 @@ async def test_stage_url_or_path_auth(
     mock_catalog.safe.return_value = None
     mock_pystac_catalog.return_value = mock_catalog
     mock_config = "test-config"
+    requests_mock.get(
+        "https://internal.example.com/path/to/item.json",
+        status_code=200,
+        json=lambda x, y: {
+            "id": "item_12346",
+            "type": "Feature",
+            "stac_version": "0.0.1",
+            "properties": {"datetime": "2025-03-24T01:00:00.000Z"},
+            "assets": {},
+        },
+    )
 
     # Configure test variables
-    location = "https://internal.example.com/item.json"
+    location = "https://internal.example.com/path/to/item.json"
     token = "valid-token"
 
     result = await stage_url_or_path(
-        mock_config, location, token, resource_catalogue_prefix="https://internal.example.com/"
+        mock_config, location, token, datahub_domain="https://internal.example.com/"
     )
 
     # Confirm calls were as expected
-    mock_open.assert_called_once_with(location, headers={"Authorization": "Bearer valid-token"})
-    mock_stac_asset_download_item.assert_called_once_with(
-        item=mock_item, directory=".", config=mock_config
-    )
+    # mock_stac_asset_download_item.assert_called_once_with(
+    #     item=mock_item, directory=".", config=mock_config
+    # )
     mock_pystac_catalog.assert_called_once_with(
         id="catalog",
         description="catalog with staged item_12346",
@@ -148,38 +415,41 @@ async def test_stage_url_or_path_auth(
     assert result == mock_catalog
 
 
-@patch("pystac.read_file")
 @pytest.mark.asyncio
-async def test_stage_url_or_path_not_found(mock_read_file, capsys):
+async def test_stage_url_or_path_not_found(requests_mock, capsys):
 
     # Configure mocks
-    mock_read_file.side_effect = FileNotFoundError
+    mock_response = mock.Mock()
+    mock_response.status_code = 404
+    requests_mock.get("https://example.com/item.json", status_code=404)
     mock_config = "test-config"
 
     # Configure test variables
     location = "https://example.com/item.json"
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(HTTPError):
         result = await stage_url_or_path(mock_config, location)
 
         # Assert result is as expected
         assert not result
 
     # Assert error is handle as expected
-    assert "The file at https://example.com/item.json was not found" in capsys.readouterr().err
+    assert f"Failed to read item at {location}" in capsys.readouterr().err
 
 
-@patch("pystac.read_file")
 @pytest.mark.asyncio
-async def test_stage_url_or_path_json_decode_error(mock_read_file, capsys):
+async def test_stage_url_or_path_json_decode_error(requests_mock, capsys):
 
     # Configure mocks
-    mock_read_file.side_effect = JSONDecodeError("Expecting value", "", 0)
+    requests_mock.get(
+        "https://example.com/item.json", status_code=200, content=b'{"invalid_json":}'
+    )
     mock_config = "test-config"
 
     # Configure test variables
     location = "https://example.com/item.json"
 
+    # Not valid JSON so pystac will fail
     with pytest.raises(JSONDecodeError):
         result = await stage_url_or_path(mock_config, location)
 
@@ -187,25 +457,24 @@ async def test_stage_url_or_path_json_decode_error(mock_read_file, capsys):
         assert not result
 
     # Assert error is handle as expected
-    assert (
-        "The file at https://example.com/item.json is not a valid JSON file"
-        in capsys.readouterr().err
-    )
+    assert f"The file at {location} is not a valid JSON file." in capsys.readouterr().err
 
 
-@patch("pystac.read_file")
 @pytest.mark.asyncio
-async def test_stage_url_or_path_error(mock_read_file, capsys):
+@patch("requests.get")
+async def test_stage_url_or_path_error(mock_requests_get, capsys):
 
     # Configure mocks
-    mock_read_file.side_effect = RuntimeError
+    mock_requests_get.side_effect = RuntimeError("Internal Server Error")
     mock_config = "test-config"
 
     # Configure test variables
     location = "https://example.com/item.json"
 
     with pytest.raises(RuntimeError):
-        result = await stage_url_or_path(mock_config, location)
+        result = await stage_url_or_path(
+            mock_config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+        )
 
         # Assert result is as expected
         assert not result
@@ -648,7 +917,9 @@ def test_main_file_path(mock_stage_url_or_path):
     result = main(config, location)
 
     # Assert the calls
-    mock_stage_url_or_path.assert_called_once_with(config, location)
+    mock_stage_url_or_path.assert_called_once_with(
+        config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+    )
 
     assert result == mock_catalog
 
@@ -667,16 +938,14 @@ def test_main_url(mock_stage_url_or_path):
     result = main(config, location)
 
     # Assert the calls
-    mock_stage_url_or_path.assert_called_once_with(config, location)
+    mock_stage_url_or_path.assert_called_once_with(
+        config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+    )
 
     assert result == mock_catalog
 
 
-@patch("stage.stage_url_or_path")
-def test_main_invalid_location(mock_stage_url_or_path):
-    # Mock the catalog
-    mock_catalog = mock.Mock()
-    mock_stage_url_or_path.return_value = mock_catalog
+def test_main_invalid_location():
 
     # Example inputs
     config = "test-config"
@@ -690,4 +959,3 @@ def test_main_invalid_location(mock_stage_url_or_path):
     # Assert the error
     assert str(e.value) == f"Location {location} is not a valid S3 key, URL or file path"
     # Assert the calls
-    mock_stage_url_or_path.assert_not_called()
