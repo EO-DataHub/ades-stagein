@@ -40,19 +40,22 @@ async def stage_url(
                 response = requests.get(location, headers={"Authorization": f"Bearer {token}"})
             else:
                 response = requests.get(location)
-            item = pystac.Item.from_dict(response.json())
+            response.raise_for_status()
+            item_json = response.json()
+            item = pystac.Item.from_dict(item_json)
         elif datahub_workspace_domain and split_domain == datahub_workspace_domain:
             if token:
                 response = requests.get(location, headers={"Authorization": f"Bearer {token}"})
             else:
                 response = requests.get(location)
-            item = pystac.Item.from_dict(response.json())
+            response.raise_for_status()
+            item_json = response.json()
+            item = pystac.Item.from_dict(item_json)
         else:
             response = requests.get(location)
-            item = pystac.Item.from_dict(response.json())
-    except FileNotFoundError:
-        print(f"The file at {location} was not found.", file=sys.stderr)
-        raise
+            response.raise_for_status()
+            item_json = response.json()
+            item = pystac.Item.from_dict(item_json)
     except JSONDecodeError:
         print(f"The file at {location} is not a valid JSON file.", file=sys.stderr)
         raise
@@ -117,17 +120,21 @@ async def stage_url_or_path(
             split_domain = domain.split(".", 1)[1]
             # Check if location is within the EODataHub Resource Catalogue
             # If token is provided, pass it to the API
-            if datahub_workspace_domain and split_domain == datahub_workspace_domain:
+            if (
+                datahub_workspace_domain
+                and split_domain == datahub_workspace_domain
+                or datahub_domain
+                and domain == datahub_domain
+            ):
                 if token:
                     print(f"Trying to download {asset_href} with api token")
                     ## Download data from href and save to file
                     response = requests.get(
                         asset_href, headers={"Authorization": f"Bearer {token}"}
                     )
-                    print(response.status_code)
                     if response.status_code == 200:
                         filename = os.path.basename(asset_href)
-                        print(f"Downloading {asset_href} to {filename}", file=sys.stderr)
+                        print(f"Saving {asset_href} to {filename}", file=sys.stderr)
                         with open(f"{filename}", "wb") as f:
                             f.write(response.content)
                     else:
