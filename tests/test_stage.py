@@ -111,7 +111,7 @@ async def test_stage_url_or_path(
 @patch("os.chdir")
 @patch("os.makedirs")
 @pytest.mark.asyncio
-async def test_stage_url_or_path_with_assets(
+async def test_stage_url_or_path_with_assets_datahub_domain(
     mock_makedirs,
     mock_chdir,
     mock_stac_asset_download_item,
