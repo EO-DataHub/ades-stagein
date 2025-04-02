@@ -107,13 +107,12 @@ async def stage_url_or_path(
     cwd = os.getcwd()
     os.chdir(item.id)
 
-    # Remove other links from item to avoid auth issues
+    # Remove other links from item to avoid parent issues
     item.links = [link for link in item.links if link.rel == "self"]
 
     # Check if assets contain links to DataHub data
     for _, asset in item.assets.items():
         asset_href = asset.href
-        print(asset_href)
         parsed_url = urlparse(asset_href)
         domain = parsed_url.netloc
         try:
