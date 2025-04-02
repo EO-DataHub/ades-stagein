@@ -158,6 +158,9 @@ requests==2.32.3
     # via
     #   eodhp-ades-stagein (pyproject.toml)
     #   pystac-client
+    #   requests-mock
+requests-mock==1.12.1
+    # via eodhp-ades-stagein (pyproject.toml)
 rich==13.7.1
     # via aiohttp-oauth2-client
 rpds-py==0.22.3
