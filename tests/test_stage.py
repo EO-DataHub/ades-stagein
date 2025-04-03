@@ -394,9 +394,6 @@ async def test_stage_url_or_path_auth(
     )
 
     # Confirm calls were as expected
-    # mock_stac_asset_download_item.assert_called_once_with(
-    #     item=mock_item, directory=".", config=mock_config
-    # )
     mock_pystac_catalog.assert_called_once_with(
         id="catalog",
         description="catalog with staged item_12346",
@@ -520,8 +517,6 @@ def test_parse_s3_url_components():
     parsed_url = mock.Mock()
     url = "s3://bucket-name/key/to/file.ex"
     parsed_url = urlparse(url)
-    # parsed_url.path = "/some/path/to/file.json"
-    # parsed_url.netloc = "www.example.com"
 
     result = parse_s3_url_components(parsed_url)
 
@@ -537,8 +532,6 @@ def test_parse_s3_url_components_access_point():
     parsed_url = mock.Mock()
     url = "s3://arn-details:accesspoint/cluster-name-workspace-s3/key/to/file.ex"
     parsed_url = urlparse(url)
-    # parsed_url.path = "/some/path/to/file.json"
-    # parsed_url.netloc = "www.example.com"
 
     result = parse_s3_url_components(parsed_url)
 
