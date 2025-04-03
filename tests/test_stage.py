@@ -25,7 +25,7 @@ DATAHUB_WORKSPACE_DOMAIN = os.getenv(
     "DATAHUB_WORKSPACE_DOMAIN", "staging.eodatahub-workspaces.org.uk"
 )
 
-API_TOKEN = os.getenv("API_TOKEN", "your_token_value")
+WORKSPACE_ACCESS_TOKEN = os.getenv("WORKSPACE_ACCESS_TOKEN", "your_token_value")
 
 
 @pytest.fixture()
@@ -473,7 +473,7 @@ async def test_stage_url_or_path_error(mock_requests_get, caplog):
 
     with pytest.raises(RuntimeError):
         result = await stage_url_or_path(
-            mock_config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+            mock_config, location, WORKSPACE_ACCESS_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
         )
 
         # Assert result is as expected
@@ -918,7 +918,7 @@ def test_main_file_path(mock_stage_url_or_path):
 
     # Assert the calls
     mock_stage_url_or_path.assert_called_once_with(
-        config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+        config, location, WORKSPACE_ACCESS_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
     )
 
     assert result == mock_catalog
@@ -939,7 +939,7 @@ def test_main_url(mock_stage_url_or_path):
 
     # Assert the calls
     mock_stage_url_or_path.assert_called_once_with(
-        config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+        config, location, WORKSPACE_ACCESS_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
     )
 
     assert result == mock_catalog

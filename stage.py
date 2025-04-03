@@ -26,7 +26,7 @@ DATAHUB_WORKSPACE_DOMAIN = os.getenv(
     "DATAHUB_WORKSPACE_DOMAIN", "staging.eodatahub-workspaces.org.uk"
 )
 
-API_TOKEN = os.getenv("API_TOKEN", "your_token_value")
+WORKSPACE_ACCESS_TOKEN = os.getenv("WORKSPACE_ACCESS_TOKEN", "your_token_value")
 
 
 async def stage_url(
@@ -108,7 +108,7 @@ async def stage_url_or_path(
     elif is_valid_file_path(location):
         item = await stage_path(location)
     else:
-        raise ValueError("Location {location} is not a valid S3 key, URL or file path")
+        raise ValueError(f"Location {location} is not a valid S3 key, URL or file path")
 
     os.makedirs(item.id, exist_ok=True)
     cwd = os.getcwd()
@@ -306,7 +306,9 @@ def main(config: stac_asset.Config, location: str):
         cat = asyncio.run(stage_s3(config, location, s3_client))
     else:
         cat = asyncio.run(
-            stage_url_or_path(config, location, API_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN)
+            stage_url_or_path(
+                config, location, WORKSPACE_ACCESS_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+            )
         )
     return cat
 
