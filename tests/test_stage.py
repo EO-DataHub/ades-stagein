@@ -19,26 +19,21 @@ from stage import (
     stage_url_or_path,
 )
 
-DATAHUB_DOMAIN = os.getenv("DATAHUB_DOMAIN", "staging.eodatahub.org.uk")
-
-DATAHUB_WORKSPACE_DOMAIN = os.getenv(
-    "DATAHUB_WORKSPACE_DOMAIN", "staging.eodatahub-workspaces.org.uk"
-)
-
-WORKSPACE_ACCESS_TOKEN = os.getenv("WORKSPACE_ACCESS_TOKEN", "your_token_value")
+DATAHUB_DOMAIN = "dev.eodatahub.org.uk"
+DATAHUB_WORKSPACE_DOMAIN = "dev.eodatahub-workspaces.org.uk"
+WORKSPACE_ACCESS_TOKEN = "valid-token"
 
 
 @pytest.fixture()
 def setenvvar(monkeypatch):
     with mock.patch.dict(os.environ, clear=True):
         envvars = {
-            "KEYCLOAK_BASE_URL": "keycloak-base-url",
-            "KEYCLOAK_REALM": "test-realm",
-            "CLIENT_ID": "client-id",
-            "CLIENT_SECRET": "client-secret",
             "AWS_ACCESS_KEY_ID": "aws-access-key",
             "AWS_SECRET_ACCESS_KEY": "aws-secret-key",
             "AWS_SESSION_TOKEN": "session-token",
+            "DATAHUB_DOMAIN": DATAHUB_DOMAIN,
+            "DATAHUB_WORKSPACE_DOMAIN": DATAHUB_WORKSPACE_DOMAIN,
+            "WORKSPACE_ACCESS_TOKEN": WORKSPACE_ACCESS_TOKEN,
         }
         for k, v in envvars.items():
             monkeypatch.setenv(k, v)
@@ -904,7 +899,7 @@ def test_main_s3(mock_stage_s3, mock_get_aws_client):
 
 
 @patch("stage.stage_url_or_path")
-def test_main_file_path(mock_stage_url_or_path):
+def test_main_file_path(mock_stage_url_or_path, setenvvar):
     # Mock the catalog
     mock_catalog = mock.Mock()
     mock_stage_url_or_path.return_value = mock_catalog
@@ -925,7 +920,7 @@ def test_main_file_path(mock_stage_url_or_path):
 
 
 @patch("stage.stage_url_or_path")
-def test_main_url(mock_stage_url_or_path):
+def test_main_url(mock_stage_url_or_path, setenvvar):
     # Mock the catalog
     mock_catalog = mock.Mock()
     mock_stage_url_or_path.return_value = mock_catalog
