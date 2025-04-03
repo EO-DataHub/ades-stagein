@@ -20,14 +20,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
-DATAHUB_DOMAIN = os.getenv("DATAHUB_DOMAIN", "staging.eodatahub.org.uk")
-
-DATAHUB_WORKSPACE_DOMAIN = os.getenv(
-    "DATAHUB_WORKSPACE_DOMAIN", "staging.eodatahub-workspaces.org.uk"
-)
-
-WORKSPACE_ACCESS_TOKEN = os.getenv("WORKSPACE_ACCESS_TOKEN", "your_token_value")
-
 
 async def stage_url(
     location: str,
@@ -307,7 +299,11 @@ def main(config: stac_asset.Config, location: str):
     else:
         cat = asyncio.run(
             stage_url_or_path(
-                config, location, WORKSPACE_ACCESS_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
+                config,
+                location,
+                os.getenv("WORKSPACE_ACCESS_TOKEN"),
+                os.getenv("DATAHUB_DOMAIN"),
+                os.getenv("DATAHUB_WORKSPACE_DOMAIN"),
             )
         )
     return cat
