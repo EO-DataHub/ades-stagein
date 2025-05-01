@@ -860,10 +860,9 @@ def test_get_aws_client_missing_creds(mock_boto3_client):
     mock_boto3_client_instance = mock.Mock()
     mock_boto3_client.return_value = mock_boto3_client_instance
 
-    with pytest.raises(ValueError):
-        get_aws_client()
+    get_aws_client()
 
-    mock_boto3_client.assert_not_called()
+    mock_boto3_client.assert_called_once_with("s3")
 
 
 @patch("stage.get_aws_client")

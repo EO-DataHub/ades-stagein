@@ -288,7 +288,7 @@ def get_aws_client() -> boto3.client:
             logger.info("Failed to configure AWS client: %s", e)
             raise
     else:
-        raise ValueError("AWS credentials not provided")
+        s3_client = boto3.client("s3")
     return s3_client
 
 
