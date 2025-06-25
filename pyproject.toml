@@ -68,9 +68,9 @@ dependencies = [
     "pystac_client",
     "boto3",
     "stac-asset",
-    "urllib3",
+    "urllib3>=2.5.0",
     "pyjwt",
-    "requests"
+    "requests>=2.32.4"
 ]
 
 # List additional groups of dependencies here (e.g. development
