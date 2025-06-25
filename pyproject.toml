@@ -14,7 +14,7 @@
 
 [project]
 name = "eodhp-ades-stagein"
-version = "0.1.0"
+dynamic = ["version"]
 description = "ADES stagein docker image spec"
 readme = "README.md"
 
@@ -113,6 +113,9 @@ markers = [
 
 [tool.setuptools]
 packages = []
+
+[tool.setuptools-git-versioning]
+enabled = true
 
 [tool.black]
 line-length = 100
