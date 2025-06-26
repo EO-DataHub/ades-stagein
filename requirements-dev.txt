@@ -154,7 +154,7 @@ referencing==0.35.1
     # via
     #   jsonschema
     #   jsonschema-specifications
-requests==2.32.3
+requests==2.32.4
     # via
     #   eodhp-ades-stagein (pyproject.toml)
     #   pystac-client
@@ -179,12 +179,12 @@ typing-extensions==4.12.2
     # via
     #   pydantic
     #   pydantic-core
-urllib3==1.26.19
+urllib3==2.5.0
     # via
     #   botocore
     #   eodhp-ades-stagein (pyproject.toml)
     #   requests
-virtualenv==20.26.3
+virtualenv==20.26.6
     # via pre-commit
 watchdog==4.0.1
     # via pytest-watcher
