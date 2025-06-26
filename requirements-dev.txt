@@ -184,7 +184,7 @@ urllib3==2.5.0
     #   botocore
     #   eodhp-ades-stagein (pyproject.toml)
     #   requests
-virtualenv==20.26.3
+virtualenv==20.26.6
     # via pre-commit
 watchdog==4.0.1
     # via pytest-watcher
