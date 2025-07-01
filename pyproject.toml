@@ -102,7 +102,7 @@ changelog = "https://github.com/UKEODHP/eodhp-ades-stagein/master/CHANGELOG.md"
 [build-system]
 # These are the assumed default build requirements from pip:
 # https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
-requires = ["setuptools>=69.0.0", "wheel"]
+requires = ["setuptools>=69.0.0", "wheel", "setuptools-git-versioning>=2.0,<3"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
