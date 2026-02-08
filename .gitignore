@@ -1,3 +1,6 @@
 *.egg-info
 venv*
 *.pyc
+.venv
+__pycache__
+.pre-commit-config.yaml
