@@ -5,11 +5,12 @@ import re
 import shutil
 import sys
 from json.decoder import JSONDecodeError
-from typing import Optional
+from pathlib import Path
+from typing import Any, cast
 from urllib.parse import ParseResult, urljoin, urlparse
 
 import boto3
-import botocore
+import botocore.exceptions
 import pystac
 import requests
 import stac_asset
@@ -23,10 +24,10 @@ logging.basicConfig(
 
 async def stage_url(
     location: str,
-    token: Optional[str] = None,
-    datahub_domain: Optional[str] = None,
-    datahub_workspace_domain: Optional[str] = None,
-) -> pystac.Catalog:
+    token: str | None = None,
+    datahub_domain: str | None = None,
+    datahub_workspace_domain: str | None = None,
+) -> pystac.Item:
     """Stage in a STAC item from a URL."""
     try:
         parsed_url = urlparse(location)
@@ -34,15 +35,9 @@ async def stage_url(
         split_domain = domain.split(".", 1)[1]
         # Check if location is within the EODataHub Resource Catalogue
         # If token is provided, pass it to the API
-        if datahub_domain and domain == datahub_domain:
-            if token:
-                response = requests.get(location, headers={"Authorization": f"Bearer {token}"})
-            else:
-                response = requests.get(location)
-            response.raise_for_status()
-            item_json = response.json()
-            item = pystac.Item.from_dict(item_json)
-        elif datahub_workspace_domain and split_domain == datahub_workspace_domain:
+        if (datahub_domain and domain == datahub_domain) or (
+            datahub_workspace_domain and split_domain == datahub_workspace_domain
+        ):
             if token:
                 response = requests.get(location, headers={"Authorization": f"Bearer {token}"})
             else:
@@ -67,10 +62,10 @@ async def stage_url(
 
 async def stage_path(
     location: str,
-) -> pystac.Catalog:
+) -> pystac.Item:
     """Stage in a STAC item from a file path."""
     try:
-        item = pystac.read_file(location)
+        item = cast(pystac.Item, pystac.read_file(location))
     except FileNotFoundError:
         logger.error("The file at %s was not found.", location)
         raise
@@ -87,9 +82,9 @@ async def stage_path(
 async def stage_url_or_path(
     config: stac_asset.Config,
     location: str,
-    token: Optional[str] = None,
-    datahub_domain: Optional[str] = None,
-    datahub_workspace_domain: Optional[str] = None,
+    token: str | None = None,
+    datahub_domain: str | None = None,
+    datahub_workspace_domain: str | None = None,
 ) -> pystac.Catalog:
     """Stage in a STAC item from a URL or file path."""
 
@@ -120,23 +115,23 @@ async def stage_url_or_path(
             split_domain = None
         # Check if location is within the EODataHub Resource Catalogue
         # If token is provided, pass it to the API
-        if (
-            datahub_workspace_domain and split_domain and split_domain == datahub_workspace_domain
-        ) or (datahub_domain and domain == datahub_domain):
-            if token:
-                logger.info("Trying to download %s with api token", asset_href)
-                ## Download data from href and save to file
-                response = requests.get(asset_href, headers={"Authorization": f"Bearer {token}"})
-                if response.status_code == 200:
-                    filename = os.path.basename(asset_href)
-                    logger.info("Saving %s to %s", asset_href, filename)
-                    with open(f"{filename}", "wb") as f:
-                        f.write(response.content)
-                else:
-                    logger.error("Failed to download %s: %s", asset_href, response.status_code)
-                    response.raise_for_status()
+        is_datahub = (datahub_workspace_domain and split_domain and split_domain == datahub_workspace_domain) or (
+            datahub_domain and domain == datahub_domain
+        )
+        if is_datahub and token:
+            logger.info("Trying to download %s with api token", asset_href)
+            ## Download data from href and save to file
+            response = requests.get(asset_href, headers={"Authorization": f"Bearer {token}"})
+            if response.status_code == 200:
+                filename = os.path.basename(asset_href)
+                logger.info("Saving %s to %s", asset_href, filename)
+                with open(f"{filename}", "wb") as f:
+                    f.write(response.content)
+            else:
+                logger.error("Failed to download %s: %s", asset_href, response.status_code)
+                response.raise_for_status()
 
-    item = await stac_asset.download_item(item=item, directory=".", config=config)
+    item = await stac_asset.download_item(item, directory=".", config=config)
     logger.info("Item and assets downloaded: %s", os.listdir("."))
     os.chdir(cwd)
 
@@ -153,16 +148,14 @@ async def stage_url_or_path(
     return cat
 
 
-def download_s3(bucket: str, key: str, file_name: str, s3_client: boto3.client) -> str:
+def download_s3(bucket: str, key: str, file_name: str, s3_client: Any) -> str:
     """Download an item from S3."""
     logger.info("Downloading item %s in bucket %s, key %s", file_name, bucket, key)
 
     try:
         obj = s3_client.get_object(Bucket=bucket, Key=key)
     except botocore.exceptions.ClientError as e:
-        logger.info(
-            "Failed to download item %s in bucket %s, key %s: %s", file_name, bucket, key, e
-        )
+        logger.info("Failed to download item %s in bucket %s, key %s: %s", file_name, bucket, key, e)
         raise
 
     # Create a temporary file and write the object content to it
@@ -172,7 +165,7 @@ def download_s3(bucket: str, key: str, file_name: str, s3_client: boto3.client) 
     return file_path
 
 
-def parse_s3_url_components(parsed_url: ParseResult) -> tuple:
+def parse_s3_url_components(parsed_url: ParseResult) -> tuple[str, str, str]:
     """Parse S3 URL components and return access point/bucket, item key and file name."""
     if parsed_url.netloc.endswith(":accesspoint"):
         parts = parsed_url.path.lstrip("/").split("/", 1)
@@ -186,16 +179,16 @@ def parse_s3_url_components(parsed_url: ParseResult) -> tuple:
     return bucket_name, item_key, file_name
 
 
-def get_current_namespace():
+def get_current_namespace() -> str:
     try:
         with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
             return f.read().strip()
-    except IOError:
+    except OSError:
         # Return default namespace
         return "default"
 
 
-async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client) -> pystac.Catalog:
+async def stage_s3(config: stac_asset.Config, href: str, s3_client: Any) -> pystac.Catalog:
     """Stage in a STAC item from S3."""
     logger.info("Stage in S3 URL %s", href)
     # Parse S3 URL
@@ -203,7 +196,7 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
     bucket_name, item_key, file_name = parse_s3_url_components(parsed_url)
     file_path = download_s3(bucket_name, item_key, file_name, s3_client)
 
-    item = pystac.read_file(file_path)
+    item = cast(pystac.Item, pystac.read_file(file_path))
 
     os.makedirs(item.id, exist_ok=True)
     cwd = os.getcwd()
@@ -211,7 +204,7 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
 
     destination = os.path.join(".", file_name)
     new_file_path = shutil.move(file_path, destination)
-    item = pystac.read_file(new_file_path)
+    item = cast(pystac.Item, pystac.read_file(new_file_path))
     logger.info("Item %s moved to %s and re-ingested by pystac", item.id, new_file_path)
 
     for asset_key, asset in item.assets.items():
@@ -224,8 +217,9 @@ async def stage_s3(config: stac_asset.Config, href: str, s3_client: boto3.client
             asset.href = asset_path
         elif parsed_asset_url.scheme in ["http", "https"]:
             logger.info("Downloading asset %s via URL", asset_href)
-            asset_path = await stac_asset.download_asset(asset, directory=".", config=config)
-            asset.href = asset_path
+            asset_name = os.path.basename(asset_href)
+            downloaded = await stac_asset.download_asset(asset_key, asset, Path(asset_name), config)
+            asset.href = downloaded.href
         elif parsed_asset_url.scheme == "":
             logger.info("Downloading asset %s via relative S3", asset_href)
             asset_key = urljoin(item_key, asset_href)
@@ -269,13 +263,9 @@ def is_valid_file_path(path: str) -> bool:
     return True
 
 
-def get_aws_client() -> boto3.client:
+def get_aws_client() -> Any:
     # Configure AWS client
-    if (
-        os.getenv("AWS_ACCESS_KEY_ID")
-        and os.getenv("AWS_SECRET_ACCESS_KEY")
-        and os.getenv("AWS_SESSION_TOKEN")
-    ):
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY") and os.getenv("AWS_SESSION_TOKEN"):
         try:
             s3_client = boto3.client(
                 service_name="s3",
@@ -292,7 +282,7 @@ def get_aws_client() -> boto3.client:
     return s3_client
 
 
-def main(config: stac_asset.Config, location: str):
+def main(config: stac_asset.Config, location: str) -> pystac.Catalog:
     if location.startswith("s3://"):
         s3_client = get_aws_client()
         cat = asyncio.run(stage_s3(config, location, s3_client))
@@ -310,7 +300,6 @@ def main(config: stac_asset.Config, location: str):
 
 
 if __name__ == "__main__":
-
     config = stac_asset.Config(warn=True)
     location = sys.argv[1]
 

@@ -1,11 +1,14 @@
 import os
 from json.decoder import JSONDecodeError
+from pathlib import Path
+from typing import Any
 from unittest import mock
 from unittest.mock import mock_open, patch
 from urllib.parse import urlparse
 
 import pystac
 import pytest
+import stac_asset
 from requests.exceptions import HTTPError
 
 from stage import (
@@ -24,8 +27,8 @@ DATAHUB_WORKSPACE_DOMAIN = "dev.eodatahub-workspaces.org.uk"
 WORKSPACE_ACCESS_TOKEN = "valid-token"
 
 
-@pytest.fixture()
-def setenvvar(monkeypatch):
+@pytest.fixture
+def setenvvar(monkeypatch: Any) -> Any:
     with mock.patch.dict(os.environ, clear=True):
         envvars = {
             "AWS_ACCESS_KEY_ID": "aws-access-key",
@@ -47,13 +50,13 @@ def setenvvar(monkeypatch):
 @patch("os.makedirs")
 @pytest.mark.asyncio
 async def test_stage_url_or_path(
-    mock_makedirs,
-    mock_chdir,
-    mock_stac_asset_download_item,
-    mock_listdir,
-    mock_pystac_catalog,
-    requests_mock,
-):
+    mock_makedirs: Any,
+    mock_chdir: Any,
+    mock_stac_asset_download_item: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    requests_mock: Any,
+) -> None:
 
     # Configure mocks
     mock_item = mock.Mock()
@@ -67,7 +70,7 @@ async def test_stage_url_or_path(
     mock_catalog.normalize_hrefs.return_value = None
     mock_catalog.safe.return_value = None
     mock_pystac_catalog.return_value = mock_catalog
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
 
     requests_mock.get(
         f"https://{DATAHUB_DOMAIN}/path/to/item.json",
@@ -107,13 +110,13 @@ async def test_stage_url_or_path(
 @patch("os.makedirs")
 @pytest.mark.asyncio
 async def test_stage_url_or_path_with_assets_datahub_domain(
-    mock_makedirs,
-    mock_chdir,
-    mock_stac_asset_download_item,
-    mock_listdir,
-    mock_pystac_catalog,
-    requests_mock,
-):
+    mock_makedirs: Any,
+    mock_chdir: Any,
+    mock_stac_asset_download_item: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    requests_mock: Any,
+) -> None:
 
     # Configure mocks
     mock_item = mock.Mock()
@@ -127,7 +130,7 @@ async def test_stage_url_or_path_with_assets_datahub_domain(
     mock_catalog.normalize_hrefs.return_value = None
     mock_catalog.safe.return_value = None
     mock_pystac_catalog.return_value = mock_catalog
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
 
     mock_file = mock_open()
 
@@ -188,13 +191,13 @@ async def test_stage_url_or_path_with_assets_datahub_domain(
 @patch("os.makedirs")
 @pytest.mark.asyncio
 async def test_stage_url_or_path_with_assets_workspace_domain(
-    mock_makedirs,
-    mock_chdir,
-    mock_stac_asset_download_item,
-    mock_listdir,
-    mock_pystac_catalog,
-    requests_mock,
-):
+    mock_makedirs: Any,
+    mock_chdir: Any,
+    mock_stac_asset_download_item: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    requests_mock: Any,
+) -> None:
 
     # Configure mocks
     mock_item = mock.Mock()
@@ -208,7 +211,7 @@ async def test_stage_url_or_path_with_assets_workspace_domain(
     mock_catalog.normalize_hrefs.return_value = None
     mock_catalog.safe.return_value = None
     mock_pystac_catalog.return_value = mock_catalog
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
 
     mock_file = mock_open()
 
@@ -269,13 +272,13 @@ async def test_stage_url_or_path_with_assets_workspace_domain(
 @patch("os.makedirs")
 @pytest.mark.asyncio
 async def test_stage_url_or_path_with_assets_other_domain(
-    mock_makedirs,
-    mock_chdir,
-    mock_stac_asset_download_item,
-    mock_listdir,
-    mock_pystac_catalog,
-    requests_mock,
-):
+    mock_makedirs: Any,
+    mock_chdir: Any,
+    mock_stac_asset_download_item: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    requests_mock: Any,
+) -> None:
 
     # Configure mocks
     mock_item = mock.Mock()
@@ -289,7 +292,7 @@ async def test_stage_url_or_path_with_assets_other_domain(
     mock_catalog.normalize_hrefs.return_value = None
     mock_catalog.safe.return_value = None
     mock_pystac_catalog.return_value = mock_catalog
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
 
     mock_file = mock_open()
 
@@ -337,8 +340,8 @@ async def test_stage_url_or_path_with_assets_other_domain(
     # Check asset was handled correctly
     last_request = requests_mock.last_request
     assert not last_request.headers.get("Authorization")
-    mock_file().write.not_called()
-    assert mock_stac_asset_download_item.called_once()
+    mock_file().write.assert_not_called()
+    mock_stac_asset_download_item.assert_called_once()
 
     # Assert result is as expected
     assert result == mock_catalog
@@ -352,13 +355,13 @@ async def test_stage_url_or_path_with_assets_other_domain(
 @patch("os.makedirs")
 @pytest.mark.asyncio
 async def test_stage_url_or_path_auth(
-    mock_makedirs,
-    mock_chdir,
-    mock_stac_asset_download_item,
-    mock_listdir,
-    mock_pystac_catalog,
-    requests_mock,
-):
+    mock_makedirs: Any,
+    mock_chdir: Any,
+    mock_stac_asset_download_item: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    requests_mock: Any,
+) -> None:
 
     # Configure mocks
     mock_item = mock.Mock()
@@ -372,7 +375,7 @@ async def test_stage_url_or_path_auth(
     mock_catalog.normalize_hrefs.return_value = None
     mock_catalog.safe.return_value = None
     mock_pystac_catalog.return_value = mock_catalog
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
     requests_mock.get(
         "https://internal.example.com/path/to/item.json",
         status_code=200,
@@ -389,9 +392,7 @@ async def test_stage_url_or_path_auth(
     location = "https://internal.example.com/path/to/item.json"
     token = "valid-token"
 
-    result = await stage_url_or_path(
-        mock_config, location, token, datahub_domain="https://internal.example.com/"
-    )
+    result = await stage_url_or_path(mock_config, location, token, datahub_domain="https://internal.example.com/")
 
     # Confirm calls were as expected
     mock_pystac_catalog.assert_called_once_with(
@@ -408,45 +409,37 @@ async def test_stage_url_or_path_auth(
 
 
 @pytest.mark.asyncio
-async def test_stage_url_or_path_not_found(requests_mock, caplog):
+async def test_stage_url_or_path_not_found(requests_mock: Any, caplog: Any) -> None:
 
     # Configure mocks
     mock_response = mock.Mock()
     mock_response.status_code = 404
     requests_mock.get("https://example.com/item.json", status_code=404)
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
 
     # Configure test variables
     location = "https://example.com/item.json"
 
     with pytest.raises(HTTPError):
-        result = await stage_url_or_path(mock_config, location)
-
-        # Assert result is as expected
-        assert not result
+        await stage_url_or_path(mock_config, location)
 
     # Assert error is handle as expected
     assert f"Failed to read item at {location}" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_stage_url_or_path_json_decode_error(requests_mock, caplog):
+async def test_stage_url_or_path_json_decode_error(requests_mock: Any, caplog: Any) -> None:
 
     # Configure mocks
-    requests_mock.get(
-        "https://example.com/item.json", status_code=200, content=b'{"invalid_json":}'
-    )
-    mock_config = "test-config"
+    requests_mock.get("https://example.com/item.json", status_code=200, content=b'{"invalid_json":}')
+    mock_config = stac_asset.Config()
 
     # Configure test variables
     location = "https://example.com/item.json"
 
     # Not valid JSON so pystac will fail
     with pytest.raises(JSONDecodeError):
-        result = await stage_url_or_path(mock_config, location)
-
-        # Assert result is as expected
-        assert not result
+        await stage_url_or_path(mock_config, location)
 
     # Assert error is handle as expected
     assert f"The file at {location} is not a valid JSON file." in caplog.text
@@ -454,22 +447,19 @@ async def test_stage_url_or_path_json_decode_error(requests_mock, caplog):
 
 @pytest.mark.asyncio
 @patch("requests.get")
-async def test_stage_url_or_path_error(mock_requests_get, caplog):
+async def test_stage_url_or_path_error(mock_requests_get: Any, caplog: Any) -> None:
 
     # Configure mocks
     mock_requests_get.side_effect = RuntimeError("Internal Server Error")
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
 
     # Configure test variables
     location = "https://example.com/item.json"
 
     with pytest.raises(RuntimeError):
-        result = await stage_url_or_path(
+        await stage_url_or_path(
             mock_config, location, WORKSPACE_ACCESS_TOKEN, DATAHUB_DOMAIN, DATAHUB_WORKSPACE_DOMAIN
         )
-
-        # Assert result is as expected
-        assert not result
 
     # Assert error is handle as expected
     assert "Failed to read item at https://example.com/item.json: " in caplog.text
@@ -478,7 +468,7 @@ async def test_stage_url_or_path_error(mock_requests_get, caplog):
 @patch("os.path.abspath")
 @patch("builtins.open")
 @patch("boto3.client")
-def test_download_s3(mock_boto3_client, mock_builtins_open, mock_abspath):
+def test_download_s3(mock_boto3_client: Any, mock_builtins_open: Any, mock_abspath: Any) -> None:
 
     # Configure mocks
     mock_obj = mock.Mock()
@@ -511,10 +501,9 @@ def test_download_s3(mock_boto3_client, mock_builtins_open, mock_abspath):
     assert result == "/absolute/path/to/example-name"
 
 
-def test_parse_s3_url_components():
+def test_parse_s3_url_components() -> None:
 
     # Configure mock
-    parsed_url = mock.Mock()
     url = "s3://bucket-name/key/to/file.ex"
     parsed_url = urlparse(url)
 
@@ -526,10 +515,9 @@ def test_parse_s3_url_components():
     assert result[2] == "file.ex"
 
 
-def test_parse_s3_url_components_access_point():
+def test_parse_s3_url_components_access_point() -> None:
 
     # Configure mock
-    parsed_url = mock.Mock()
     url = "s3://arn-details:accesspoint/cluster-name-workspace-s3/key/to/file.ex"
     parsed_url = urlparse(url)
 
@@ -551,20 +539,18 @@ def test_parse_s3_url_components_access_point():
 @patch("stage.download_s3")
 @pytest.mark.asyncio
 async def test_stage_s3_s3_assets(
-    mock_download_s3,
-    mock_pyastac_read_file,
-    mock_makedirs,
-    mock_getcwd,
-    mock_chdir,
-    mock_shutil_move,
-    mock_listdir,
-    mock_pystac_catalog,
-):
-
-    # Configure test variables
+    mock_download_s3: Any,
+    mock_pyastac_read_file: Any,
+    mock_makedirs: Any,
+    mock_getcwd: Any,
+    mock_chdir: Any,
+    mock_shutil_move: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+) -> None:
 
     # Configure mocks
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
     href = "s3://bucket-name/path/to/item.json"
     mock_download_s3.return_value = "/absolute/path/to/item.json"
     mock_makedirs.return_value = None
@@ -637,24 +623,26 @@ async def test_stage_s3_s3_assets(
 @patch("stage.download_s3")
 @pytest.mark.asyncio
 async def test_stage_s3_url_assets(
-    mock_download_s3,
-    mock_pyastac_read_file,
-    mock_makedirs,
-    mock_getcwd,
-    mock_chdir,
-    mock_shutil_move,
-    mock_listdir,
-    mock_pystac_catalog,
-    mock_stac_asset_download_asset,
-):
-
-    # Configure test variables
+    mock_download_s3: Any,
+    mock_pyastac_read_file: Any,
+    mock_makedirs: Any,
+    mock_getcwd: Any,
+    mock_chdir: Any,
+    mock_shutil_move: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    mock_stac_asset_download_asset: Any,
+) -> None:
 
     # Configure mocks
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
     href = "s3://bucket-name/path/to/item.json"
     mock_download_s3.return_value = "/absolute/path/to/item.json"
-    mock_stac_asset_download_asset.return_value = None
+    mock_downloaded_asset_1 = mock.Mock()
+    mock_downloaded_asset_1.href = "downloaded_asset_1.json"
+    mock_downloaded_asset_2 = mock.Mock()
+    mock_downloaded_asset_2.href = "downloaded_asset_2.json"
+    mock_stac_asset_download_asset.side_effect = [mock_downloaded_asset_1, mock_downloaded_asset_2]
     mock_makedirs.return_value = None
     mock_getcwd.return_value = "/current/directory"
     mock_chdir.return_value = None
@@ -698,10 +686,8 @@ async def test_stage_s3_url_assets(
     )
 
     calls = mock_stac_asset_download_asset.call_args_list
-    assert calls[0][0][0] == mock_asset_1
-    assert calls[0][1] == {"directory": ".", "config": mock_config}
-    assert calls[1][0][0] == mock_asset_2
-    assert calls[1][1] == {"directory": ".", "config": mock_config}
+    assert calls[0][0] == ("asset_1", mock_asset_1, Path("asset_1.json"), mock_config)
+    assert calls[1][0] == ("asset_2", mock_asset_2, Path("asset_2.json"), mock_config)
 
 
 @patch("stac_asset.download_asset")
@@ -715,21 +701,19 @@ async def test_stage_s3_url_assets(
 @patch("stage.download_s3")
 @pytest.mark.asyncio
 async def test_stage_s3_relative_assets(
-    mock_download_s3,
-    mock_pyastac_read_file,
-    mock_makedirs,
-    mock_getcwd,
-    mock_chdir,
-    mock_shutil_move,
-    mock_listdir,
-    mock_pystac_catalog,
-    mock_stac_asset_download_asset,
-):
-
-    # Configure test variables
+    mock_download_s3: Any,
+    mock_pyastac_read_file: Any,
+    mock_makedirs: Any,
+    mock_getcwd: Any,
+    mock_chdir: Any,
+    mock_shutil_move: Any,
+    mock_listdir: Any,
+    mock_pystac_catalog: Any,
+    mock_stac_asset_download_asset: Any,
+) -> None:
 
     # Configure mocks
-    mock_config = "test-config"
+    mock_config = stac_asset.Config()
     href = "s3://bucket-name/path/to/item.json"
     mock_download_s3.return_value = "/absolute/path/to/item.json"
     mock_stac_asset_download_asset.return_value = None
@@ -792,7 +776,7 @@ async def test_stage_s3_relative_assets(
     )
 
 
-def test_is_valid_url_valid():
+def test_is_valid_url_valid() -> None:
 
     # Configure test variables
     valid_url = "https://example.com/item.json"
@@ -803,7 +787,7 @@ def test_is_valid_url_valid():
     assert result
 
 
-def test_is_valid_url_invalid():
+def test_is_valid_url_invalid() -> None:
 
     # Configure test variables
     invalid_url = "http:///example.com"
@@ -814,7 +798,7 @@ def test_is_valid_url_invalid():
     assert not result
 
 
-def test_is_valid_file_path_valid():
+def test_is_valid_file_path_valid() -> None:
 
     # Configure test variables
     valid_path = "/path/to/file.json"
@@ -825,7 +809,7 @@ def test_is_valid_file_path_valid():
     assert result
 
 
-def test_is_valid_file_path_invalid():
+def test_is_valid_file_path_invalid() -> None:
 
     # Configure test variables
     invalid_path = "path*/to/file.json"
@@ -837,7 +821,7 @@ def test_is_valid_file_path_invalid():
 
 
 @patch("boto3.client")
-def test_get_aws_client(mock_boto3_client, setenvvar):
+def test_get_aws_client(mock_boto3_client: Any, setenvvar: Any) -> None:
     mock_boto3_client_instance = mock.Mock()
     mock_boto3_client.return_value = mock_boto3_client_instance
     result = get_aws_client()
@@ -856,7 +840,7 @@ def test_get_aws_client(mock_boto3_client, setenvvar):
 
 
 @patch("boto3.client")
-def test_get_aws_client_missing_creds(mock_boto3_client):
+def test_get_aws_client_missing_creds(mock_boto3_client: Any) -> None:
     mock_boto3_client_instance = mock.Mock()
     mock_boto3_client.return_value = mock_boto3_client_instance
 
@@ -867,7 +851,7 @@ def test_get_aws_client_missing_creds(mock_boto3_client):
 
 @patch("stage.get_aws_client")
 @patch("stage.stage_s3")
-def test_main_s3(mock_stage_s3, mock_get_aws_client):
+def test_main_s3(mock_stage_s3: Any, mock_get_aws_client: Any) -> None:
     # Mock the AWS client
     mock_s3_client = mock.Mock()
     mock_get_aws_client.return_value = mock_s3_client
@@ -877,7 +861,7 @@ def test_main_s3(mock_stage_s3, mock_get_aws_client):
     mock_stage_s3.return_value = mock_catalog
 
     # Example inputs
-    config = "test-config"
+    config = stac_asset.Config()
     location = "s3://bucket-name/path/to/item.json"
 
     # call function
@@ -891,13 +875,13 @@ def test_main_s3(mock_stage_s3, mock_get_aws_client):
 
 
 @patch("stage.stage_url_or_path")
-def test_main_file_path(mock_stage_url_or_path, setenvvar):
+def test_main_file_path(mock_stage_url_or_path: Any, setenvvar: Any) -> None:
     # Mock the catalog
     mock_catalog = mock.Mock()
     mock_stage_url_or_path.return_value = mock_catalog
 
     # Example inputs
-    config = "test-config"
+    config = stac_asset.Config()
     location = "/workspace/workpsace-name/path/to/item.json"
 
     # call function
@@ -912,13 +896,13 @@ def test_main_file_path(mock_stage_url_or_path, setenvvar):
 
 
 @patch("stage.stage_url_or_path")
-def test_main_url(mock_stage_url_or_path, setenvvar):
+def test_main_url(mock_stage_url_or_path: Any, setenvvar: Any) -> None:
     # Mock the catalog
     mock_catalog = mock.Mock()
     mock_stage_url_or_path.return_value = mock_catalog
 
     # Example inputs
-    config = "test-config"
+    config = stac_asset.Config()
     location = "https://example-data.org/workspace/workpsace-name/path/to/item.json"
 
     # call function
@@ -932,17 +916,13 @@ def test_main_url(mock_stage_url_or_path, setenvvar):
     assert result == mock_catalog
 
 
-def test_main_invalid_location():
+def test_main_invalid_location() -> None:
 
     # Example inputs
-    config = "test-config"
+    config = stac_asset.Config()
     # Invalid URL or file path
     location = "https:/example-data.org/workspace/workpsace-name/path/to/item.json"
 
     # call function
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError, match=f"Location {location} is not a valid S3 key, URL or file path"):
         main(config, location)
-
-    # Assert the error
-    assert str(e.value) == f"Location {location} is not a valid S3 key, URL or file path"
-    # Assert the calls
