@@ -4,6 +4,8 @@ FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 ENV UV_NO_DEV=1
 
 WORKDIR /app
+# ADES runs a bare `python` command, so the project venv must come first on PATH
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
